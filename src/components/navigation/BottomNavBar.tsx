@@ -76,7 +76,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
           </span>
           {hasUnreadTrash && activeTab !== 'trash' && (
             <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[#ba1a1a] text-white text-[10px] font-bold flex items-center justify-center shadow-xs animate-in zoom-in-75 duration-150">
-              1
+              !
             </span>
           )}
         </div>

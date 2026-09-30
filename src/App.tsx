@@ -350,11 +350,11 @@ export default function App() {
     };
     setTrashItems((prev) => [newTrashItem, ...prev]);
 
-    // Show red 1 badge on trash tab
+    // Show red ! badge on trash tab
     setHasUnreadTrash(true);
 
     // Show toast with Undo option
-    showToast('영상이 휴지통으로 이동되었습니다 (30일 후 영구 삭제)', undefined, () => {
+    showToast('영상을 휴지통으로 이동했습니다', undefined, () => {
       // Undo action: restore to bookmarks & remove from trash
       setBookmarks((prev) => [video, ...prev]);
       setTrashItems((prev) => prev.filter((item) => item.id !== newTrashItem.id));
@@ -368,7 +368,7 @@ export default function App() {
     // Add back to bookmarks
     setBookmarks((prev) => [item.video, ...prev]);
 
-    showToast(`'${item.video.title}' 영상이 보관함으로 복원되었습니다.`);
+    showToast('영상을 복구했습니다.');
   };
 
   // Permanently delete video from trash
