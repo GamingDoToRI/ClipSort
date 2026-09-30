@@ -1,0 +1,7 @@
+{
+  "name": "ClipSort - 클립소트",
+  "description": "유튜브, 인스타그램, 틱톡 영상 링크만 저장하면 AI가 제목과 썸네일을 분석해 주제별 카테고리로 자동 분류해 주는 스마트 클립 보관함",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
