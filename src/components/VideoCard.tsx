@@ -25,6 +25,20 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     }
   };
 
+  const formatSavedTime = (timestamp: number) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString('ko-KR', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  };
+
   return (
     <article
       className={`group bg-white rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col ${
@@ -44,8 +58,8 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             src={video.thumbnail}
             alt={video.title}
             onError={() => setImgError(true)}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#eaedff] to-[#dae2fd] text-[#5046e5]">
@@ -57,7 +71,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         {/* Fresh Ingestion Highlight badge if recent */}
         {isRecentHighlight && (
           <div
-            className="absolute top-3 right-3 text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md"
+            className="absolute top-3 right-3 text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md z-10"
             style={{ backgroundColor: primaryColor }}
           >
             <span
@@ -81,12 +95,17 @@ export const VideoCard: React.FC<VideoCardProps> = ({
 
       {/* Content */}
       <div className="p-4 flex-1 flex flex-col justify-between gap-2.5">
-        {/* Source metadata row (YouTube / Instagram) */}
-        <div className="flex items-center gap-1.5 text-xs text-[#777587] font-medium">
-          <span className="material-symbols-outlined text-[15px] text-red-500">
-            smart_display
+        {/* Source metadata row (YouTube / Instagram) + Saved Time */}
+        <div className="flex items-center justify-between text-xs text-[#777587]">
+          <div className="flex items-center gap-1.5 font-medium">
+            <span className="material-symbols-outlined text-[15px] text-red-500">
+              smart_display
+            </span>
+            <span>{video.source === 'instagram' ? 'Instagram' : 'YouTube'}</span>
+          </div>
+          <span className="text-[11px] text-[#8e8ca0]" title="저장된 시점">
+            {formatSavedTime(video.createdAt)}
           </span>
-          <span>{video.source === 'instagram' ? 'Instagram' : 'YouTube'}</span>
         </div>
 
         {/* Title */}
@@ -98,12 +117,17 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           {video.title}
         </h3>
 
+        {/* Video Link URL bar */}
+        <div className="text-[11px] text-[#777587] truncate bg-[#f2f3ff]/60 px-2 py-1 rounded-md border border-[#dae2fd]/50 font-mono">
+          {video.url}
+        </div>
+
         {/* Bottom row: Category Tag & Change Button + Delete Button */}
         <div className="pt-2 border-t border-[#f2f3ff] flex items-center justify-between gap-2">
           {/* Assigned Category Name */}
           <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-semibold shadow-xs truncate max-w-[130px]"
+              className="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-semibold shadow-xs truncate max-w-[120px]"
               style={{ backgroundColor: primaryColor }}
             >
               {video.category}
@@ -111,7 +135,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           </div>
 
           {/* Action Buttons: Category Change & Delete */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0 relative">
             {/* Category Change Button */}
             <button
               type="button"

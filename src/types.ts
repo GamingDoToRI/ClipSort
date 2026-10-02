@@ -1,3 +1,5 @@
+export type VideoLinkStatus = 'active' | 'source_deleted' | 'trash_purged';
+
 export interface VideoBookmark {
   id: string;
   title: string;
@@ -6,6 +8,9 @@ export interface VideoBookmark {
   url: string;
   createdAt: number;
   source?: 'youtube' | 'instagram' | 'tiktok' | 'web';
+  status?: VideoLinkStatus; // 'active' (정상 저장), 'source_deleted' (SNS 원본 삭제됨), 'trash_purged' (영구 삭제됨)
+  inTrash?: boolean;
+  trashedAt?: number;
 }
 
 export interface TrashItem {
@@ -56,4 +61,3 @@ export type AuthScreenType =
   | 'google_select'
   | 'google_consent'
   | 'apple_login';
-

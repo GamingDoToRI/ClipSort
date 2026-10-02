@@ -5,20 +5,20 @@ import { UserProfile } from '../types';
 interface HeaderProps {
   user: UserProfile;
   primaryColor?: string;
-  onOpenAuth: () => void;
+  onOpenMyInfo: () => void;
   onOpenShareSim: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   user,
   primaryColor = '#5046e5',
-  onOpenAuth,
+  onOpenMyInfo,
   onOpenShareSim,
 }) => {
   return (
-    <header className="sticky top-0 z-30 bg-[#faf8ff]/90 dark:bg-[#283044]/90 backdrop-blur-md border-b border-[#dae2fd]/60 px-4 py-2.5 transition-colors">
+    <header className="sticky top-0 z-30 bg-[#faf8ff]/90 backdrop-blur-md border-b border-[#dae2fd]/60 px-4 py-2.5 transition-colors">
       <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
-        {/* Brand Zone matching Panel 2 */}
+        {/* Brand Zone */}
         <div className="flex items-center gap-2">
           <div
             className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center shadow-xs"
@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
               auto_awesome
             </span>
           </div>
-          <span className="text-xl font-bold tracking-tight text-[#131b2e] dark:text-[#eef0ff]">
+          <span className="text-xl font-bold tracking-tight text-[#131b2e]">
             ClipSort
           </span>
         </div>
@@ -49,12 +49,12 @@ export const Header: React.FC<HeaderProps> = ({
             <span>OS 공유 연동</span>
           </button>
 
-          {/* Account / Onboarding Switcher */}
+          {/* Account Profile Button -> Navigates straight to 설정 - 계정 - 내 정보 */}
           <button
             type="button"
-            onClick={onOpenAuth}
+            onClick={onOpenMyInfo}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold border border-[#dae2fd] bg-white text-[#131b2e] hover:bg-[#f2f3ff] active:scale-95 transition-all cursor-pointer shadow-xs"
-            title={user.isLoggedIn ? `${user.nickname} 계정 관리` : '회원가입 및 로그인'}
+            title="내 정보 관리"
           >
             <div
               className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold overflow-hidden"
@@ -65,11 +65,11 @@ export const Header: React.FC<HeaderProps> = ({
               ) : user.nickname ? (
                 user.nickname.charAt(0)
               ) : (
-                'U'
+                '김'
               )}
             </div>
             <span className="max-w-[75px] truncate text-[#131b2e]">
-              {user.isLoggedIn ? user.nickname : '로그인'}
+              {user.nickname || '내 정보'}
             </span>
           </button>
         </div>

@@ -5,7 +5,7 @@ export const INITIAL_BOOKMARKS: VideoBookmark[] = [
     id: 'b-1',
     title: '15분 만에 완성하는 원팬 파스타 초간단 레시피',
     thumbnail: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281699?w=800&auto=format&fit=crop&q=80',
-    category: '요리',
+    category: '음식',
     url: 'https://www.youtube.com/watch?v=recipe_pasta_sample',
     createdAt: Date.now() - 1000 * 60 * 15, // 15 mins ago
     source: 'youtube',
@@ -50,7 +50,7 @@ export const INITIAL_BOOKMARKS: VideoBookmark[] = [
 
 export const STANDARD_CATEGORIES = [
   '전체',
-  '요리',
+  '음식',
   '운동',
   '여행',
   '자기계발',

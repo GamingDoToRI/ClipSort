@@ -8,6 +8,7 @@ interface CategoryChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirmChange: (videoId: string, newCategory: string) => void;
+  onAddNewCategory?: (newCategory: string) => void;
 }
 
 export const CategoryChangeModal: React.FC<CategoryChangeModalProps> = ({
@@ -16,6 +17,7 @@ export const CategoryChangeModal: React.FC<CategoryChangeModalProps> = ({
   isOpen,
   onClose,
   onConfirmChange,
+  onAddNewCategory,
 }) => {
   if (!isOpen || !video) return null;
 
@@ -29,12 +31,29 @@ export const CategoryChangeModal: React.FC<CategoryChangeModalProps> = ({
     setIsAddingCustom(false);
   };
 
+  const handleApplyNewCategory = () => {
+    const trimmed = customCategory.trim();
+    if (trimmed) {
+      if (onAddNewCategory) {
+        onAddNewCategory(trimmed);
+      }
+      setSelectedCategory(trimmed);
+      setIsAddingCustom(false);
+      setCustomCategory('');
+    } else {
+      setIsAddingCustom(false);
+    }
+  };
+
   const handleConfirm = () => {
     const finalCategory = isAddingCustom && customCategory.trim()
       ? customCategory.trim()
       : selectedCategory;
 
     if (finalCategory) {
+      if (onAddNewCategory && isAddingCustom && customCategory.trim()) {
+        onAddNewCategory(customCategory.trim());
+      }
       onConfirmChange(video.id, finalCategory);
     }
     onClose();
@@ -143,20 +162,20 @@ export const CategoryChangeModal: React.FC<CategoryChangeModalProps> = ({
                     value={customCategory}
                     onChange={(e) => setCustomCategory(e.target.value)}
                     placeholder="예: 인테리어, 어학, 캠핑..."
-                    maxLength={12}
+                    maxLength={15}
                     autoFocus
                     className="flex-1 px-3 py-2 text-sm bg-white border border-[#dae2fd] rounded-lg text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyNewCategory();
+                      }
+                    }}
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      if (customCategory.trim()) {
-                        setSelectedCategory(customCategory.trim());
-                      } else {
-                        setIsAddingCustom(false);
-                      }
-                    }}
-                    className="px-3 py-2 text-xs font-semibold bg-[#5046e5] text-white rounded-lg hover:bg-[#3625cd]"
+                    onClick={handleApplyNewCategory}
+                    className="px-3.5 py-2 text-xs font-semibold bg-[#5046e5] text-white rounded-lg hover:bg-[#3625cd] transition-colors cursor-pointer"
                   >
                     적용
                   </button>

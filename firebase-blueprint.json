@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "VideoBookmark": {
+      "title": "VideoBookmark",
+      "description": "Represents a saved video link item with AI classification, status tracking, and deletion lifecycle",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the video"
+        },
+        "url": {
+          "type": "string",
+          "description": "Original URL of the video link"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title or summary of the video"
+        },
+        "thumbnail": {
+          "type": "string",
+          "description": "Thumbnail image URL"
+        },
+        "category": {
+          "type": "string",
+          "description": "AI-classified category name"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source platform of the video (youtube, instagram, tiktok, etc)",
+          "enum": ["youtube", "instagram", "tiktok", "web"]
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds when the video was saved"
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the saved video link",
+          "enum": ["active", "source_deleted", "trash_purged"]
+        },
+        "inTrash": {
+          "type": "boolean",
+          "description": "Whether the video is currently placed in ClipSort trash"
+        },
+        "trashedAt": {
+          "type": "number",
+          "description": "Unix timestamp when video was moved to trash"
+        }
+      },
+      "required": ["id", "url", "title", "category", "createdAt", "status"]
+    }
+  },
+  "firestore": {
+    "/videos/{videoId}": {
+      "schema": "VideoBookmark",
+      "description": "Saved video bookmarks collection managed by ClipSort"
+    }
+  }
+}
