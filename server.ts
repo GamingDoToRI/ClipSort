@@ -15,24 +15,33 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
 
-// YouTube ID extractor
+// YouTube ID extractor supporting standard, shorts, mobile m.youtube, youtu.be, live, and share urls
 function extractYouTubeId(url: string): string | null {
   try {
     const parsed = new URL(url);
-    if (parsed.hostname.includes('youtube.com')) {
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('youtube.com') || host.includes('youtu.be')) {
       if (parsed.pathname.startsWith('/shorts/')) {
         return parsed.pathname.split('/shorts/')[1].split('/')[0].split('?')[0];
       }
-      return parsed.searchParams.get('v');
-    } else if (parsed.hostname.includes('youtu.be')) {
-      return parsed.pathname.slice(1).split('?')[0];
+      if (parsed.pathname.startsWith('/live/')) {
+        return parsed.pathname.split('/live/')[1].split('/')[0].split('?')[0];
+      }
+      if (host.includes('youtu.be')) {
+        return parsed.pathname.slice(1).split('?')[0].split('/')[0];
+      }
+      const v = parsed.searchParams.get('v');
+      if (v) return v;
     }
   } catch {
-    // fallback regex
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-    return match ? match[1] : null;
+    // fallback regex below
   }
-  return null;
+
+  // Regex fallback matching shorts, youtu.be, watch?v=, embed, etc.
+  const match = url.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/i
+  );
+  return match ? match[1] : null;
 }
 
 /**
@@ -59,10 +68,10 @@ function ruleBasedClassify(
   const text = `${title} ${url} ${thumbnail}`.toLowerCase();
   const excluded = new Set(excludedCategories.map((c) => c.trim().toLowerCase()));
 
-  // 1. 음식 (대분류: 맛집, 먹방, 요리, 레시피, 부대찌개, 베이킹, 카페 등 음식 관련 전반)
+  // 1. 음식 (대분류: 맛집, 먹방, 요리, 레시피, 부대찌개, 베이킹, 카페, 식당 등 음식 관련 전반)
   if (
     !excluded.has('음식') &&
-    /(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant)/i.test(
+    /(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기|cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating|asmr food)/i.test(
       text
     )
   ) {
@@ -72,7 +81,7 @@ function ruleBasedClassify(
   // 2. 운동 (대분류: 헬스, 홈트, 스트레칭 및 야구/축구/골프 등 모든 세부 스포츠 종목 포괄)
   if (
     !excluded.has('운동') &&
-    /(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|루틴|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|kbo|mlb|홈런|삼진|투수|타자|안타|선수|workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|bodybuilding)/i.test(
+    /(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|루틴|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|배구|배드민턴|kbo|mlb|홈런|삼진|투수|타자|안타|선수|하이라이트|workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|football|bodybuilding|exercise)/i.test(
       text
     )
   ) {
@@ -82,7 +91,7 @@ function ruleBasedClassify(
   // 3. 여행 (Travel / Tourism / Trip / Tour)
   if (
     !excluded.has('여행') &&
-    /(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|브이로그|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|호캉스|여권|패키지|travel|trip|tour|vlog|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing)/i.test(
+    /(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|브이로그|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|호캉스|여권|패키지|투어|travel|trip|tour|vlog|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing|airline)/i.test(
       text
     )
   ) {
@@ -102,7 +111,7 @@ function ruleBasedClassify(
   // 5. 자기계발 (Self-Improvement / Productivity / Study / Finance)
   if (
     !excluded.has('자기계발') &&
-    /(자기계발|독서|생산성|공부|동기부여|시간관리|마인드셋|재테크|주식|성공|습관|아침루틴|모닝루틴|학습|자격증|영어|외국어|회화|커리어|취업|이직|부자|투자|부동산|study|productivity|book|mindset|routine|habit|motivation|career|finance|investment|growth)/i.test(
+    /(자기계발|독서|생산성|공부|동기부여|시간관리|마인드셋|재테크|주식|성공|습관|아침루틴|모닝루틴|학습|자격증|영어|외국어|회화|커리어|취업|이직|부자|투자|부동산|경제|study|productivity|book|mindset|routine|habit|motivation|career|finance|investment|growth)/i.test(
       text
     )
   ) {
@@ -285,6 +294,20 @@ ${existingList}
   return ruleBasedClassify(title, url, thumbnail, excludedCategories, existingCategories);
 }
 
+// Clean and decode HTML entities in titles
+function cleanHtmlTitle(raw: string): string {
+  return raw
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Extract metadata (oEmbed / OpenGraph / YouTube HTML)
 async function extractMetadata(url: string) {
   let title = '';
@@ -318,6 +341,27 @@ async function extractMetadata(url: string) {
       title: '집중력을 3배 올려주는 아침 루틴과 시간 관리법',
       thumbnail: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&auto=format&fit=crop&q=80',
       source: 'youtube' as const,
+    };
+  }
+  if (url.includes('sample_doenjang_jjigae')) {
+    return {
+      title: '백종원의 초간단 차돌 된장찌개 끓이기 🍳',
+      thumbnail: 'https://images.unsplash.com/photo-1547496502-affa22d38842?w=800&auto=format&fit=crop&q=80',
+      source: 'youtube' as const,
+    };
+  }
+  if (url.includes('sample_lower_body_stretch')) {
+    return {
+      title: '릴스에서 난리난 하루 10분 하체 스트레칭 루틴 🧘‍♀️',
+      thumbnail: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80',
+      source: 'instagram' as const,
+    };
+  }
+  if (url.includes('sample_europe_packing')) {
+    return {
+      title: '3박4일 유럽 여행 짐싸기 극강의 압축 꿀팁 ✈️',
+      thumbnail: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&auto=format&fit=crop&q=80',
+      source: 'tiktok' as const,
     };
   }
   if (url.includes('recipe_kimchi') || url.includes('kimchi_sample')) {
@@ -354,26 +398,26 @@ async function extractMetadata(url: string) {
     source = 'youtube';
     thumbnail = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
 
-    // Try YouTube oEmbed first (fast & reliable)
+    // Try YouTube oEmbed first (fast, official & CORS-free on server)
     try {
       const oembedRes = await fetch(
         `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`,
-        { signal: AbortSignal.timeout(3000) }
+        { signal: AbortSignal.timeout(4000) }
       );
       if (oembedRes.ok) {
         const data = await oembedRes.json();
-        if (data.title) {
-          title = data.title;
+        if (data.title && typeof data.title === 'string' && data.title.trim().length > 0) {
+          title = cleanHtmlTitle(data.title);
         }
         if (data.thumbnail_url) {
           thumbnail = data.thumbnail_url;
         }
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn('YouTube oEmbed fetch error:', e);
     }
 
-    // Secondary fetch: YouTube page HTML if oEmbed didn't provide good title
+    // Secondary fetch: YouTube page HTML if oEmbed didn't provide a specific title
     if (!title || title.includes(`유튜브 영상 (${ytId})`)) {
       try {
         const pageRes = await fetch(`https://www.youtube.com/watch?v=${ytId}`, {
@@ -382,7 +426,7 @@ async function extractMetadata(url: string) {
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
           },
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(4000),
         });
         if (pageRes.ok) {
           const html = await pageRes.text();
@@ -394,7 +438,7 @@ async function extractMetadata(url: string) {
           if (titleMatch && titleMatch[1]) {
             const rawTitle = titleMatch[1].replace(/ - YouTube$/, '').trim();
             if (rawTitle && rawTitle !== 'YouTube') {
-              title = rawTitle;
+              title = cleanHtmlTitle(rawTitle);
             }
           }
         }
@@ -422,7 +466,7 @@ async function extractMetadata(url: string) {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
         },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(4000),
       });
 
       if (response.ok) {
@@ -436,9 +480,9 @@ async function extractMetadata(url: string) {
           html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:image["']/i);
 
         if (ogTitleMatch && ogTitleMatch[1]) {
-          title = ogTitleMatch[1].trim();
+          title = cleanHtmlTitle(ogTitleMatch[1]);
         } else if (titleMatch && titleMatch[1]) {
-          title = titleMatch[1].trim();
+          title = cleanHtmlTitle(titleMatch[1]);
         }
 
         if (ogImageMatch && ogImageMatch[1]) {
@@ -495,7 +539,7 @@ app.post('/api/extract-and-classify', async (req, res) => {
     // AI categorization with multimodal thumbnail, excluded categories, and dynamic broad category generation
     const excluded = Array.isArray(excludedCategories) ? excludedCategories : [];
     const existing = Array.isArray(existingCategories) ? existingCategories : [];
-    const category = await classifyWithAI(
+    let category = await classifyWithAI(
       metadata.title,
       trimmedUrl,
       metadata.thumbnail,
@@ -503,10 +547,18 @@ app.post('/api/extract-and-classify', async (req, res) => {
       existing
     );
 
+    // If result is generic '라이프스타일' or '기타', check rule-based classifier against title, url, thumbnail
+    if (!category || category === '라이프스타일' || category === '기타') {
+      const ruleCat = ruleBasedClassify(metadata.title, trimmedUrl, metadata.thumbnail, excluded, existing);
+      if (ruleCat && ruleCat !== '라이프스타일' && ruleCat !== '기타') {
+        category = ruleCat;
+      }
+    }
+
     res.json({
       title: metadata.title,
       thumbnail: metadata.thumbnail,
-      category,
+      category: category || '라이프스타일',
       source: metadata.source,
       url: trimmedUrl,
     });
@@ -522,14 +574,22 @@ app.post('/api/classify-only', async (req, res) => {
     const { title, url, thumbnail, excludedCategories, existingCategories } = req.body;
     const excluded = Array.isArray(excludedCategories) ? excludedCategories : [];
     const existing = Array.isArray(existingCategories) ? existingCategories : [];
-    const category = await classifyWithAI(
+    let category = await classifyWithAI(
       title || '',
       url || '',
       thumbnail || '',
       excluded,
       existing
     );
-    res.json({ category });
+
+    if (!category || category === '라이프스타일' || category === '기타') {
+      const ruleCat = ruleBasedClassify(title || '', url || '', thumbnail || '', excluded, existing);
+      if (ruleCat && ruleCat !== '라이프스타일' && ruleCat !== '기타') {
+        category = ruleCat;
+      }
+    }
+
+    res.json({ category: category || '라이프스타일' });
   } catch (error) {
     console.error('Error in /api/classify-only:', error);
     res.status(500).json({ error: 'Failed to classify' });

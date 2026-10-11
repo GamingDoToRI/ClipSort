@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile } from '../../types';
 import { AvatarCropModal } from './AvatarCropModal';
+import { LogIn, User } from 'lucide-react';
 
 interface MyInfoSubViewProps {
   user: UserProfile;
@@ -10,6 +11,7 @@ interface MyInfoSubViewProps {
   onUpdateAvatar?: (avatarUrl: string) => void;
   onShowToast: (msg: string) => void;
   onNavigateChangePassword: () => void;
+  onOpenAuth?: () => void;
   onLogout: () => void;
 }
 
@@ -21,6 +23,7 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
   onUpdateAvatar,
   onShowToast,
   onNavigateChangePassword,
+  onOpenAuth,
   onLogout,
 }) => {
   const [isEditingNick, setIsEditingNick] = useState(false);
@@ -38,8 +41,8 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
   };
 
   const handleCopyUserId = () => {
-    navigator.clipboard?.writeText('@clipsort_user');
-    onShowToast('아이디(@clipsort_user)가 복사되었습니다');
+    navigator.clipboard?.writeText(user.isLoggedIn ? '@clipsort_user' : '@guest');
+    onShowToast(`아이디(${user.isLoggedIn ? '@clipsort_user' : '@guest'})가 복사되었습니다`);
   };
 
   const handleConfirmLogout = () => {
@@ -59,16 +62,14 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
       if (dataUrl) {
-        // Open crop modal to choose circular area
         setCropImageSrc(dataUrl);
       }
     };
     reader.readAsDataURL(file);
 
-    // Reset input value to allow re-uploading the same file if needed
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -99,6 +100,32 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
 
       {/* Main content */}
       <main className="px-1 pt-4 flex flex-col gap-6">
+        {/* Guest Mode Notice Banner */}
+        {!user.isLoggedIn && (
+          <div className="bg-gradient-to-r from-[#eaedff] to-[#f2f3ff] rounded-2xl p-4 border border-[#dae2fd] shadow-xs flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[#5046e5] shadow-xs">
+                <User className="w-5 h-5 text-[#5046e5]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#131b2e]">현재 게스트 상태입니다</h3>
+                <p className="text-xs text-[#777587]">회원가입/로그인 시 내 북마크를 보존할 수 있습니다</p>
+              </div>
+            </div>
+            {onOpenAuth && (
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs active:scale-95 transition-all cursor-pointer"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>로그인/가입</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Hidden file input for avatar photo change */}
         <input
           ref={fileInputRef}
@@ -119,26 +146,30 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
                   alt={user.nickname}
                   className="w-full h-full object-cover"
                 />
-              ) : (
+              ) : user.isLoggedIn ? (
                 <svg className="w-20 h-20 text-[#5046e5] translate-y-1" fill="currentColor" viewBox="0 0 100 100">
                   <path d="M50 12C28 12 18 30 18 55C18 78 32 90 50 90C68 90 82 78 82 55C82 30 72 12 50 12Z" fill="#5046E5" />
                   <circle cx="39" cy="48" fill="#131B2E" r="4.5" />
                   <circle cx="61" cy="48" fill="#131B2E" r="4.5" />
                   <path d="M42 22C46 19 54 19 58 22" opacity="0.6" stroke="white" strokeLinecap="round" strokeWidth="2.5" />
                 </svg>
+              ) : (
+                <User className="w-12 h-12 text-[#5046e5]" />
               )}
             </div>
 
-            {/* Camera Floating Badge - Clicking this triggers photo change */}
-            <button
-              type="button"
-              aria-label="프로필 사진 변경"
-              title="프로필 사진 변경"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white border border-[#dae2fd] flex items-center justify-center shadow-md text-[#464555] hover:text-[#5046e5] hover:bg-[#eaedff] active:scale-90 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[17px]">photo_camera</span>
-            </button>
+            {/* Camera Floating Badge - Clicking this triggers photo change if logged in */}
+            {user.isLoggedIn && (
+              <button
+                type="button"
+                aria-label="프로필 사진 변경"
+                title="프로필 사진 변경"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white border border-[#dae2fd] flex items-center justify-center shadow-md text-[#464555] hover:text-[#5046e5] hover:bg-[#eaedff] active:scale-90 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[17px]">photo_camera</span>
+              </button>
+            )}
           </div>
         </section>
 
@@ -146,22 +177,26 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
         <section className="bg-white rounded-2xl p-2 border border-[#dae2fd]/60 shadow-xs">
           {/* Row 1: 닉네임 */}
           <div
-            onClick={() => setIsEditingNick(true)}
-            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-[#f2f3ff] transition-colors cursor-pointer"
+            onClick={() => user.isLoggedIn && setIsEditingNick(true)}
+            className={`flex items-center justify-between p-3.5 rounded-xl ${user.isLoggedIn ? 'hover:bg-[#f2f3ff] cursor-pointer' : ''} transition-colors`}
           >
             <span className="text-sm font-medium text-[#131b2e]">닉네임</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-[#131b2e]">{user.nickname}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEditingNick(true);
-                }}
-                className="text-xs font-semibold px-2 py-0.5 rounded-lg bg-[#eaedff] text-[#5046e5] hover:bg-[#dae2fd] transition-colors"
-              >
-                수정
-              </button>
+              <span className="text-sm font-semibold text-[#131b2e]">
+                {user.isLoggedIn ? user.nickname : '게스트 사용자'}
+              </span>
+              {user.isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditingNick(true);
+                  }}
+                  className="px-2 py-1 rounded-lg text-xs font-medium text-[#5046e5] bg-[#eaedff] hover:bg-[#dae2fd] transition-colors"
+                >
+                  수정
+                </button>
+              )}
             </div>
           </div>
 
@@ -174,8 +209,8 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
           >
             <span className="text-sm font-medium text-[#131b2e]">아이디</span>
             <div className="flex items-center gap-1.5 text-xs text-[#777587]">
-              <span>@clipsort_user</span>
-              <span className="material-symbols-outlined text-[18px]">content_copy</span>
+              <span>{user.isLoggedIn ? '@clipsort_user' : '@guest'}</span>
+              <span className="material-symbols-outlined text-[16px] text-[#5046e5]">content_copy</span>
             </div>
           </div>
 
@@ -185,55 +220,123 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
           <div className="flex items-center justify-between p-3.5 rounded-xl">
             <span className="text-sm font-medium text-[#131b2e]">연동 이메일</span>
             <div className="flex items-center gap-1.5 text-xs text-[#777587]">
-              <span>{user.email || 'clipsort_user@gmail.com'}</span>
+              <span>{user.isLoggedIn ? user.email || 'clipsort_user@gmail.com' : '미연동(로그인 필요)'}</span>
             </div>
           </div>
         </section>
 
         {/* Security & Actions Section */}
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold text-[#777587] px-1">보안 및 변경</h2>
-          <div className="bg-white rounded-2xl border border-[#dae2fd]/60 divide-y divide-[#dae2fd]/30 overflow-hidden shadow-xs">
-            {/* 비밀번호 변경 */}
-            <div
-              onClick={onNavigateChangePassword}
-              className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
-                  <span className="material-symbols-outlined text-[19px]">lock_reset</span>
+        {user.isLoggedIn ? (
+          <section className="space-y-2">
+            <h2 className="text-xs font-semibold text-[#777587] px-1">보안 및 변경</h2>
+            <div className="bg-white rounded-2xl border border-[#dae2fd]/60 divide-y divide-[#dae2fd]/30 overflow-hidden shadow-xs">
+              {/* 비밀번호 변경 */}
+              <div
+                onClick={onNavigateChangePassword}
+                className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
+                    <span className="material-symbols-outlined text-[19px]">lock_reset</span>
+                  </div>
+                  <span className="text-sm font-medium text-[#131b2e]">비밀번호 변경</span>
                 </div>
-                <span className="text-sm font-medium text-[#131b2e]">비밀번호 변경</span>
+                <span className="material-symbols-outlined text-[#777587] text-[20px]">
+                  chevron_right
+                </span>
               </div>
-              <span className="material-symbols-outlined text-[#777587] text-[20px]">
-                chevron_right
-              </span>
-            </div>
 
-            {/* 로그아웃 (비밀번호 변경 하단 배치) */}
-            <div
-              onClick={() => setShowLogoutModal(true)}
-              className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555] group-hover:text-[#ba1a1a] transition-colors">
-                  <span className="material-symbols-outlined text-[19px]">logout</span>
+              {/* 로그아웃 */}
+              <div
+                onClick={() => setShowLogoutModal(true)}
+                className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555] group-hover:text-[#ba1a1a] transition-colors">
+                    <span className="material-symbols-outlined text-[19px]">logout</span>
+                  </div>
+                  <span className="text-sm font-medium text-[#131b2e]">로그아웃</span>
                 </div>
-                <span className="text-sm font-medium text-[#131b2e]">로그아웃</span>
+                <span className="material-symbols-outlined text-[#777587] text-[20px]">
+                  chevron_right
+                </span>
               </div>
-              <span className="material-symbols-outlined text-[#777587] text-[20px]">
-                chevron_right
-              </span>
             </div>
-          </div>
-        </section>
+          </section>
+        ) : (
+          <section className="space-y-2">
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="w-full py-3.5 rounded-2xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <LogIn className="w-4 h-4" />
+              <span>로그인 및 회원가입 진행하기</span>
+            </button>
+          </section>
+        )}
 
         {/* Account Metadata */}
-        <div className="flex items-center justify-center gap-1.5 py-3 text-xs text-[#777587]">
-          <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-          <span>가입일 2025.01.15</span>
-        </div>
+        {user.isLoggedIn && (
+          <div className="flex items-center justify-center gap-1.5 py-3 text-xs text-[#777587]">
+            <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+            <span>가입일 2025.01.15</span>
+          </div>
+        )}
       </main>
+
+      {/* 닉네임 수정 바텀시트 / 모달 */}
+      {isEditingNick && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setIsEditingNick(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 shadow-2xl max-w-xs mx-auto w-[85%] border border-[#dae2fd]/60 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-base text-[#131b2e] mb-3">닉네임 변경</h3>
+            <input
+              type="text"
+              value={nicknameInput}
+              onChange={(e) => setNicknameInput(e.target.value)}
+              placeholder="새로운 닉네임 입력"
+              maxLength={12}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#dae2fd] text-sm text-[#131b2e] focus:outline-none focus:border-[#5046e5] mb-4 bg-[#f2f3ff]/50"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditingNick(false)}
+                className="flex-1 py-2.5 rounded-xl bg-[#f2f3ff] text-xs font-semibold text-[#131b2e] hover:bg-[#eaedff]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveNickname}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-white shadow-xs"
+                style={{ backgroundColor: primaryColor }}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 프로필 이미지 크롭 모달 */}
+      {cropImageSrc && (
+        <AvatarCropModal
+          imageSrc={cropImageSrc}
+          primaryColor={primaryColor}
+          onCancel={() => setCropImageSrc(null)}
+          onConfirm={handleConfirmCrop}
+        />
+      )}
 
       {/* 로그아웃 확인 팝업 모달 */}
       {showLogoutModal && (
@@ -267,61 +370,13 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmLogout}
-                className="w-full py-3 rounded-xl bg-[#5046e5] text-white font-semibold text-xs hover:bg-[#3625cd] transition-colors active:scale-[0.98] shadow-sm cursor-pointer"
+                className="w-full py-3 rounded-xl bg-[#ba1a1a] text-white font-semibold text-xs hover:bg-[#93000a] transition-colors active:scale-[0.98] shadow-sm cursor-pointer"
               >
                 로그아웃
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* 닉네임 수정 모달 Sheet */}
-      {isEditingNick && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end justify-center p-0">
-          <div className="w-full max-w-xl bg-white rounded-t-3xl p-5 shadow-2xl flex flex-col gap-4 animate-in slide-in-from-bottom duration-200">
-            <div className="w-9 h-1 bg-[#CBD5E1] rounded-full mx-auto" />
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#131b2e]">닉네임 변경</h3>
-              <button
-                type="button"
-                onClick={() => setIsEditingNick(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-[#777587] hover:bg-[#f2f3ff]"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-            <p className="text-xs text-[#777587]">ClipSort에서 사용할 닉네임을 입력해 주세요.</p>
-            <div className="flex flex-col gap-1">
-              <input
-                type="text"
-                value={nicknameInput}
-                onChange={(e) => setNicknameInput(e.target.value)}
-                maxLength={15}
-                autoFocus
-                className="w-full px-4 py-3 bg-[#f2f3ff] border border-[#dae2fd] rounded-xl text-sm text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
-              />
-              <span className="text-[11px] text-[#777587] text-right">최대 15자</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleSaveNickname}
-              className="w-full py-3.5 bg-[#5046e5] text-white rounded-xl font-bold text-sm shadow-md hover:bg-[#3625cd] transition-all cursor-pointer"
-            >
-              저장하기
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 프로필 사진 영역 선택 모달 (Circular Crop) */}
-      {cropImageSrc && (
-        <AvatarCropModal
-          imageSrc={cropImageSrc}
-          primaryColor={primaryColor}
-          onConfirm={handleConfirmCrop}
-          onCancel={() => setCropImageSrc(null)}
-        />
       )}
     </div>
   );

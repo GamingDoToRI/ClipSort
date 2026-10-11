@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile, SettingsSubPage, DisplayMode } from '../../types';
+import { LogIn, User } from 'lucide-react';
 
 interface SettingsViewProps {
   user: UserProfile;
@@ -7,6 +8,7 @@ interface SettingsViewProps {
   themeColorHex: string;
   themeColorName: string;
   onNavigateSubPage: (sub: SettingsSubPage) => void;
+  onOpenAuth: () => void;
   onLogout: () => void;
   onShowToast: (msg: string) => void;
 }
@@ -17,6 +19,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   themeColorHex,
   themeColorName,
   onNavigateSubPage,
+  onOpenAuth,
   onLogout,
   onShowToast,
 }) => {
@@ -52,43 +55,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* SECTION 1: 상단 계정 정보 (Account Information Card) */}
         <section className="space-y-1.5">
           <div className="text-xs font-semibold text-[#777587] px-1">계정</div>
-          <div
-            onClick={() => onNavigateSubPage('my_info')}
-            className="bg-white rounded-2xl p-4 border border-[#dae2fd]/60 transition-all duration-200 active:scale-[0.99] cursor-pointer hover:bg-[#f2f3ff] shadow-xs"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3.5">
-                {/* Avatar with ClipSort Indigo accent gradient */}
-                <div className="relative w-12 h-12 rounded-full bg-gradient-to-tr from-[#5046e5] to-[#57dffe] p-0.5 flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center overflow-hidden">
-                    <div className="w-9 h-9 rounded-full bg-[#5046e5]/10 flex items-center justify-center text-[#5046e5]">
-                      <span
-                        className="material-symbols-outlined text-[24px]"
-                        style={{ fontVariationSettings: "'FILL' 1" }}
-                      >
-                        account_circle
+          {user.isLoggedIn ? (
+            <div
+              onClick={() => onNavigateSubPage('my_info')}
+              className="bg-white rounded-2xl p-4 border border-[#dae2fd]/60 transition-all duration-200 active:scale-[0.99] cursor-pointer hover:bg-[#f2f3ff] shadow-xs"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3.5">
+                  {/* Avatar with ClipSort Indigo accent gradient */}
+                  <div className="relative w-12 h-12 rounded-full bg-gradient-to-tr from-[#5046e5] to-[#57dffe] p-0.5 flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                      <div className="w-9 h-9 rounded-full bg-[#5046e5]/10 flex items-center justify-center text-[#5046e5]">
+                        <span
+                          className="material-symbols-outlined text-[24px]"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          account_circle
+                        </span>
+                      </div>
+                    </div>
+                    {/* Mini status pip */}
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#5046e5] border-2 border-white rounded-full" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-base font-bold text-[#131b2e]">
+                        {user.nickname}
                       </span>
                     </div>
+                    <p className="text-xs text-[#777587]">
+                      {user.email || '@clipsort_user'}
+                    </p>
                   </div>
-                  {/* Mini status pip */}
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#5046e5] border-2 border-white rounded-full" />
                 </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-base font-bold text-[#131b2e]">
-                      {user.nickname}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#777587]">
-                    {user.email || '@clipsort_user'}
-                  </p>
+                <span className="material-symbols-outlined text-[#777587] text-[20px]">
+                  chevron_right
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-r from-[#eaedff] to-[#f2f3ff] rounded-2xl p-4 border border-[#dae2fd] shadow-xs flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center text-[#5046e5] shadow-xs">
+                  <User className="w-5 h-5 text-[#5046e5]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#131b2e]">게스트(로그인 필요)</h3>
+                  <p className="text-xs text-[#777587]">로그인하고 내 북마크를 안전하게 저장하세요</p>
                 </div>
               </div>
-              <span className="material-symbols-outlined text-[#777587] text-[20px]">
-                chevron_right
-              </span>
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white shadow-xs active:scale-95 transition-all cursor-pointer"
+                style={{ backgroundColor: themeColorHex }}
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>로그인/가입</span>
+              </button>
             </div>
-          </div>
+          )}
         </section>
 
         {/* SECTION 2: 화면 및 테마 (Display & Visual Configuration) */}
@@ -160,17 +186,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* 백그라운드 링크 자동 감지 토글 */}
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-lg bg-[#57dffe]/20 flex items-center justify-center text-[#00687a]">
-                  <span className="material-symbols-outlined text-[19px]">
-                    content_paste_go
-                  </span>
+                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
+                  <span className="material-symbols-outlined text-[19px]">content_paste_search</span>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-[#131b2e]">
-                    백그라운드 링크 자동 감지
+                    클립보드 링크 감지
                   </p>
                   <p className="text-xs text-[#777587]">
-                    복사된 쇼츠/릴스/영상 URL 자동 팝업
+                    복사된 영상 링크를 앱 실행 시 자동 인식
                   </p>
                 </div>
               </div>
@@ -182,8 +206,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     setAutoDetectClipboard(e.target.checked);
                     onShowToast(
                       e.target.checked
-                        ? '백그라운드 링크 자동 감지가 켜졌습니다'
-                        : '백그라운드 링크 자동 감지가 꺼졌습니다'
+                        ? '클립보드 자동 감지가 활성화되었습니다'
+                        : '클립보드 자동 감지가 해제되었습니다'
                     );
                   }}
                   className="sr-only peer"
@@ -192,18 +216,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </label>
             </div>
 
-            {/* 카테고리 자동 분류 알림 토글 */}
+            {/* AI 분류 완료 알림 푸시 토글 */}
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
-                  <span className="material-symbols-outlined text-[19px]">
-                    notifications_active
-                  </span>
+                  <span className="material-symbols-outlined text-[19px]">notifications_active</span>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-[#131b2e]">분류 완료 알림 푸시</p>
+                  <p className="text-sm font-medium text-[#131b2e]">
+                    AI 분류 완료 알림
+                  </p>
                   <p className="text-xs text-[#777587]">
-                    AI 스마트 태그 배정 완료 시 알림
+                    분류가 끝났을 때 알림 수신
                   </p>
                 </div>
               </div>
@@ -260,11 +284,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </section>
 
-        {/* SECTION 4: 서비스 및 정책 */}
+        {/* SECTION 4: 서비스 이용 안내 및 약관 */}
         <section className="space-y-1.5">
-          <div className="text-xs font-semibold text-[#777587] px-1">서비스</div>
+          <div className="text-xs font-semibold text-[#777587] px-1">서비스 정보</div>
           <div className="bg-white rounded-2xl border border-[#dae2fd]/60 divide-y divide-[#dae2fd]/40 overflow-hidden shadow-xs">
-            {/* 버전 정보 */}
+            {/* 서비스 버전 정보 */}
             <button
               type="button"
               onClick={() => onNavigateSubPage('version_info')}
@@ -274,17 +298,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
                   <span className="material-symbols-outlined text-[19px]">info</span>
                 </div>
-                <span className="text-sm font-medium text-[#131b2e]">버전정보</span>
+                <span className="text-sm font-medium text-[#131b2e]">버전 정보</span>
               </div>
-              <div className="flex items-center space-x-1">
-                <span className="text-xs text-[#777587] font-medium">1.0.0 (최신 버전)</span>
-                <span className="material-symbols-outlined text-[#777587] text-[18px]">
+              <div className="flex items-center space-x-1 text-[#777587]">
+                <span className="text-sm">v1.2.0 (최신)</span>
+                <span className="material-symbols-outlined text-[18px]">
                   chevron_right
                 </span>
               </div>
             </button>
 
-            {/* 이용약관 */}
+            {/* 서비스 이용약관 */}
             <button
               type="button"
               onClick={() => onNavigateSubPage('terms')}
@@ -292,11 +316,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
-                  <span className="material-symbols-outlined text-[19px]">
-                    description
-                  </span>
+                  <span className="material-symbols-outlined text-[19px]">description</span>
                 </div>
-                <span className="text-sm font-medium text-[#131b2e]">이용약관</span>
+                <span className="text-sm font-medium text-[#131b2e]">
+                  서비스 이용약관
+                </span>
               </div>
               <span className="material-symbols-outlined text-[#777587] text-[18px]">
                 chevron_right
@@ -358,24 +382,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </span>
             </button>
 
-            {/* 회원탈퇴 */}
-            <button
-              type="button"
-              onClick={() => setShowWithdrawModal(true)}
-              className="w-full flex items-center justify-between p-4 text-left transition-colors duration-150 hover:bg-[#ffdad6]/30 active:bg-[#ffdad6]/60 cursor-pointer"
-            >
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-lg bg-[#ffdad6]/50 flex items-center justify-center text-[#ba1a1a]">
-                  <span className="material-symbols-outlined text-[19px]">
-                    person_remove
-                  </span>
+            {/* 회원탈퇴 (로그인 상태일 때만 노출) */}
+            {user.isLoggedIn && (
+              <button
+                type="button"
+                onClick={() => setShowWithdrawModal(true)}
+                className="w-full flex items-center justify-between p-4 text-left transition-colors duration-150 hover:bg-[#ffdad6]/30 active:bg-[#ffdad6]/60 cursor-pointer"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#ffdad6]/50 flex items-center justify-center text-[#ba1a1a]">
+                    <span className="material-symbols-outlined text-[19px]">
+                      person_remove
+                    </span>
+                  </div>
+                  <span className="text-sm font-medium text-[#ba1a1a]">회원탈퇴</span>
                 </div>
-                <span className="text-sm font-medium text-[#ba1a1a]">회원탈퇴</span>
-              </div>
-              <span className="material-symbols-outlined text-[#ba1a1a]/60 text-[18px]">
-                chevron_right
-              </span>
-            </button>
+                <span className="material-symbols-outlined text-[#ba1a1a]/60 text-[18px]">
+                  chevron_right
+                </span>
+              </button>
+            )}
           </div>
         </section>
 

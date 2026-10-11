@@ -2,7 +2,7 @@
  * Intelligent Client-Side Semantic Category Classification
  * Strictly enforces broad categories (대분류):
  * - "음식": 맛집 탐방, 먹방, 요리, 레시피, 부대찌개, 카페, 식당 투어 등 음식 관련 전반
- * - "운동": 헬스, 홈트, 피트니스, 스트레칭 및 야구, 축구, 농구 등 모든 스포츠 종목 포괄
+ * - "운동": 헬스, 홈트, 피트니스, 스트레칭 및 야구, 축구, 농구, 골프 등 모든 스포츠 종목 포괄
  * - "여행", "테크", "자기계발", "패션/뷰티", "라이프스타일", "음악/댄스", "예능/유머", "반려동물", "영화/드라마"
  */
 
@@ -19,7 +19,7 @@ export function classifyContentClientSide(
   // 1. 음식 (대분류: 맛집, 먹방, 부대찌개, 골목, 요리, 레시피, 카페, 베이커리 등 전반)
   if (
     !excluded.has('음식') &&
-    /(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant)/i.test(
+    /(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기|cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating)/i.test(
       text
     )
   ) {
@@ -29,7 +29,7 @@ export function classifyContentClientSide(
   // 2. 운동 (대분류: 헬스, 홈트, 스트레칭 및 야구/축구/골프 등 모든 세부 스포츠 포괄)
   if (
     !excluded.has('운동') &&
-    /(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|루틴|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|kbo|mlb|홈런|삼진|투수|타자|안타|선수|workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|bodybuilding)/i.test(
+    /(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|루틴|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|배구|배드민턴|kbo|mlb|홈런|삼진|투수|타자|안타|선수|하이라이트|workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|football|bodybuilding|exercise)/i.test(
       text
     )
   ) {
@@ -39,7 +39,7 @@ export function classifyContentClientSide(
   // 3. 여행 (Travel / Tourism / Trip / Tour)
   if (
     !excluded.has('여행') &&
-    /(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|브이로그|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|호캉스|여권|패키지|travel|trip|tour|vlog|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing)/i.test(
+    /(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|브이로그|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|호캉스|여권|패키지|투어|travel|trip|tour|vlog|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing|airline)/i.test(
       text
     )
   ) {
@@ -59,7 +59,7 @@ export function classifyContentClientSide(
   // 5. 자기계발 (Self-Improvement / Productivity / Reading / Habit)
   if (
     !excluded.has('자기계발') &&
-    /(자기계발|독서|생산성|공부|동기부여|시간관리|마인드셋|재테크|주식|성공|습관|아침루틴|모닝루틴|학습|자격증|영어|외국어|회화|커리어|취업|이직|부자|투자|부동산|study|productivity|book|mindset|routine|habit|motivation|career|finance|investment|growth)/i.test(
+    /(자기계발|독서|생산성|공부|동기부여|시간관리|마인드셋|재테크|주식|성공|습관|아침루틴|모닝루틴|학습|자격증|영어|외국어|회화|커리어|취업|이직|부자|투자|부동산|경제|study|productivity|book|mindset|routine|habit|motivation|career|finance|investment|growth)/i.test(
       text
     )
   ) {
@@ -99,7 +99,7 @@ export function classifyContentClientSide(
   // 9. 반려동물 (Pets / Animals)
   if (
     !excluded.has('반려동물') &&
-    /(반려동물|강아지|고양이|댕댕이|냥이|애견|애묘|포메라니안|동물|pet|dog|cat|puppy|kitten|animal)/i.test(
+    /(반려동물|강아지|고양이|댕댕이|냥이|애견|애묘|포메라니안|골든리트리버|동물|pet|dog|cat|puppy|kitten|animal)/i.test(
       text
     )
   ) {
@@ -133,6 +133,14 @@ export function classifyContentClientSide(
         return ec;
       }
     }
+  }
+
+  // Only return '라이프스타일' if explicit lifestyle keywords match, otherwise fallback to smart generic
+  if (
+    !excluded.has('라이프스타일') &&
+    /(라이프스타일|인테리어|방꾸미기|룸투어|청소|정리|살림|자취|vlog|브이로그|lifestyle|home)/i.test(text)
+  ) {
+    return '라이프스타일';
   }
 
   if (!excluded.has('라이프스타일')) {

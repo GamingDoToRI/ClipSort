@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, LogIn, Lock } from 'lucide-react';
 
 interface LinkInputAreaProps {
   onSaveLink: (url: string) => Promise<void>;
   isLoading: boolean;
   primaryColor?: string;
+  isLoggedIn?: boolean;
+  onRequireAuth?: () => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -19,18 +21,38 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
   onSaveLink,
   isLoading,
   primaryColor = '#5046e5',
+  isLoggedIn = false,
+  onRequireAuth,
   onShowToast,
 }) => {
   const [url, setUrl] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLoggedIn) {
+      if (onRequireAuth) {
+        onRequireAuth();
+      } else {
+        onShowToast('영상 저장은 로그인 후 이용하실 수 있습니다.');
+      }
+      return;
+    }
+
     if (!url.trim() || isLoading) return;
     await onSaveLink(url.trim());
     setUrl('');
   };
 
   const handlePasteClipboard = async () => {
+    if (!isLoggedIn) {
+      if (onRequireAuth) {
+        onRequireAuth();
+      } else {
+        onShowToast('영상 저장은 로그인 후 이용하실 수 있습니다.');
+      }
+      return;
+    }
+
     try {
       const text = await navigator.clipboard.readText();
       if (text && (text.startsWith('http://') || text.startsWith('https://'))) {
@@ -46,8 +68,39 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
     }
   };
 
+  const handleSampleClick = (sampleUrl: string) => {
+    setUrl(sampleUrl);
+  };
+
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#dae2fd]/70 transition-all flex flex-col gap-2.5">
+      {/* Guest Login Banner when not logged in */}
+      {!isLoggedIn && (
+        <div className="bg-gradient-to-r from-[#eaedff] to-[#f2f3ff] rounded-xl p-3 border border-[#dae2fd] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-[#131b2e]">로그인 후 AI 클립을 저장하세요</p>
+              <p className="text-[11px] text-[#777587]">회원가입 후 간편하게 유튜브/인스타 영상을 자동 분류할 수 있어요</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRequireAuth}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-xs hover:brightness-105 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+            style={{ backgroundColor: primaryColor }}
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>로그인</span>
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
         {/* Link Input Row with Clipboard Paste button */}
         <div className="relative flex items-center rounded-xl border border-[#dae2fd] bg-[#f2f3ff]/60 focus-within:ring-1 focus-within:ring-[#5046e5] focus-within:border-[#5046e5] focus-within:bg-white transition-all">
@@ -55,7 +108,7 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="영상 링크를 붙여넣으세요"
+            placeholder={isLoggedIn ? "영상 링크를 붙여넣으세요" : "영상 링크를 입력하고 로그인하여 저장하세요"}
             required
             className="w-full bg-transparent text-[#131b2e] placeholder-[#777587] text-sm py-3 pl-3 pr-10 focus:outline-none"
           />
@@ -80,6 +133,11 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>AI 분석 및 자동 분류 중...</span>
+            </>
+          ) : !isLoggedIn ? (
+            <>
+              <LogIn className="w-4 h-4" />
+              <span>로그인하고 저장하기</span>
             </>
           ) : (
             <>
@@ -110,7 +168,7 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
           <button
             key={idx}
             type="button"
-            onClick={() => setUrl(sample.url)}
+            onClick={() => handleSampleClick(sample.url)}
             className="text-xs px-2.5 py-1 rounded-lg bg-[#f2f3ff] text-[#464555] hover:text-[#3625cd] hover:bg-[#eaedff] border border-[#dae2fd]/40 transition-colors whitespace-nowrap cursor-pointer"
           >
             {sample.label}

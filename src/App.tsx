@@ -191,7 +191,7 @@ export default function App() {
     return [];
   });
 
-  // User Profile state
+  // User Profile state (Defaults to Guest mode for new visitors/mobile)
   const [user, setUser] = useState<UserProfile>(() => {
     try {
       const saved = localStorage.getItem('clipsort_user');
@@ -202,9 +202,9 @@ export default function App() {
       // ignore
     }
     return {
-      isLoggedIn: true,
-      nickname: '김클립',
-      email: 'creator.alex@gmail.com',
+      isLoggedIn: false,
+      nickname: '게스트',
+      email: '',
       provider: 'email',
     };
   });
@@ -527,18 +527,39 @@ export default function App() {
         console.warn('Backend extract error, using client extraction fallback:', err);
       }
 
-      // Check YouTube thumbnail if missing
-      if (!thumbnail) {
-        const ytMatch = url.match(
-          /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
-        );
-        if (ytMatch && ytMatch[1]) {
-          thumbnail = `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
-          source = 'youtube';
-        } else {
-          thumbnail =
-            'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
+      // Check YouTube thumbnail & title via client oEmbed if title is generic or missing
+      const ytMatch = url.match(
+        /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/i
+      );
+      if (ytMatch && ytMatch[1]) {
+        const ytId = ytMatch[1];
+        source = 'youtube';
+        if (!thumbnail) {
+          thumbnail = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
         }
+
+        // If title is missing or a generic fallback placeholder, fetch client-side oEmbed
+        if (!title || title.startsWith('유튜브 영상') || title === '유튜브 영상 콘텐츠') {
+          try {
+            const oembedRes = await fetch(
+              `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`,
+              { signal: AbortSignal.timeout(3000) }
+            );
+            if (oembedRes.ok) {
+              const oeData = await oembedRes.json();
+              if (oeData.title) {
+                title = oeData.title;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!thumbnail) {
+        thumbnail =
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
       }
 
       // Client title fallback if empty
@@ -716,9 +737,13 @@ export default function App() {
       <Header
         primaryColor={themeColor.hex}
         user={user}
-        onOpenMyInfo={() => {
-          setActiveTab('settings');
-          setSettingsSubPage('my_info');
+        onOpenAccount={() => {
+          if (user.isLoggedIn) {
+            setActiveTab('settings');
+            setSettingsSubPage('my_info');
+          } else {
+            setIsAuthOpen(true);
+          }
         }}
         onOpenShareSim={() => setIsShareSimOpen(true)}
       />
@@ -733,6 +758,10 @@ export default function App() {
               onSaveLink={handleSaveLink}
               isLoading={isLoading}
               primaryColor={themeColor.hex}
+              isLoggedIn={user.isLoggedIn}
+              onRequireAuth={() => {
+                setIsAuthOpen(true);
+              }}
               onShowToast={(msg) => showToast(msg)}
             />
 
@@ -788,12 +817,18 @@ export default function App() {
             themeColorName={themeColor.name}
             displayMode={displayMode}
             onNavigateSubPage={(sub: SettingsSubPage) => setSettingsSubPage(sub)}
+            onOpenAuth={() => setIsAuthOpen(true)}
             onLogout={() => {
               setUser({
                 isLoggedIn: false,
                 nickname: '게스트',
                 email: '',
               });
+              try {
+                localStorage.removeItem('clipsort_user');
+              } catch {
+                // ignore
+              }
               showToast('로그아웃 되었습니다.');
             }}
             onShowToast={(msg) => showToast(msg)}
@@ -806,6 +841,7 @@ export default function App() {
             user={user}
             primaryColor={themeColor.hex}
             onBack={() => setSettingsSubPage(null)}
+            onOpenAuth={() => setIsAuthOpen(true)}
             onUpdateNickname={(newNick) => {
               setUser((prev) => ({ ...prev, nickname: newNick }));
               showToast('닉네임이 변경되었습니다.');
@@ -818,6 +854,11 @@ export default function App() {
                 nickname: '게스트',
                 email: '',
               });
+              try {
+                localStorage.removeItem('clipsort_user');
+              } catch {
+                // ignore
+              }
               showToast('로그아웃 되었습니다.');
               setSettingsSubPage(null);
             }}
@@ -901,7 +942,15 @@ export default function App() {
       <OSShareSimulationModal
         isOpen={isShareSimOpen}
         onClose={() => setIsShareSimOpen(false)}
-        onShareToClipSort={handleSaveLink}
+        onShareToClipSort={async (url, title) => {
+          if (!user.isLoggedIn) {
+            setIsShareSimOpen(false);
+            setIsAuthOpen(true);
+            showToast('공유 링크 저장은 로그인 후 이용하실 수 있습니다.');
+            return;
+          }
+          await handleSaveLink(url, title);
+        }}
       />
 
       {/* 회원가입 & 로그인 모달 */}
@@ -911,6 +960,11 @@ export default function App() {
         currentUser={user}
         onLoginSuccess={(newProfile) => {
           setUser(newProfile);
+          try {
+            localStorage.setItem('clipsort_user', JSON.stringify(newProfile));
+          } catch {
+            // ignore
+          }
           showToast(`${newProfile.nickname}님 환영합니다!`);
         }}
       />
