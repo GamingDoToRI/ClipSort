@@ -25,9 +25,61 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   onClose,
   onLoginSuccess,
 }) => {
-  const [screen, setScreen] = useState<AuthScreenType>('email_step1');
+  const [screen, setScreen] = useState<AuthScreenType>('email_direct_login');
 
-  // Step 1 state
+  // Main Login screen states (matching user reference mockup)
+  const [loginTab, setLoginTab] = useState<'id' | 'phone'>('id');
+  const [loginId, setLoginId] = useState(() => {
+    try {
+      return localStorage.getItem('clipsort_saved_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [saveId, setSaveId] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem('clipsort_saved_id'));
+    } catch {
+      return false;
+    }
+  });
+  const [autoLogin, setAutoLogin] = useState(() => {
+    try {
+      return localStorage.getItem('clipsort_auto_login') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Find ID states
+  const [findIdName, setFindIdName] = useState('');
+  const [findIdContact, setFindIdContact] = useState('');
+  const [foundIdResult, setFoundIdResult] = useState<string | null>(null);
+
+  // Reset to email_direct_login when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setScreen('email_direct_login');
+      try {
+        const savedId = localStorage.getItem('clipsort_saved_id');
+        if (savedId) {
+          setLoginId(savedId);
+          setSaveId(true);
+        }
+        const savedAuto = localStorage.getItem('clipsort_auto_login');
+        if (savedAuto === 'true') {
+          setAutoLogin(true);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [isOpen]);
+
+  // Step 1 state (회원가입)
   const [emailUser, setEmailUser] = useState('creator.vision');
   const [selectedDomain, setSelectedDomain] = useState('@gmail.com');
   const [allAgreed, setAllAgreed] = useState(false);
@@ -127,207 +179,357 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity overflow-y-auto">
-      {/* Outer Shell */}
-      <div className="w-full max-w-sm sm:max-w-md bg-[#faf8ff] rounded-3xl shadow-2xl border border-[#dae2fd] overflow-hidden my-auto flex flex-col relative animate-in zoom-in-95 duration-200">
-        {/* Quick Nav Bar between 7 uploaded screens */}
-        <div className="bg-[#eaedff] px-3 py-2 border-b border-[#dae2fd] flex items-center justify-between text-[11px] overflow-x-auto no-scrollbar">
-          <span className="font-bold text-[#3625cd] shrink-0 mr-1">화면 전환:</span>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setScreen('email_direct_login')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'email_direct_login' ? 'bg-[#5046e5] text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              로그인
-            </button>
-            <button
-              onClick={() => setScreen('find_password')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'find_password' || screen === 'reset_password_step' ? 'bg-[#5046e5] text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              PW찾기
-            </button>
-            <button
-              onClick={() => setScreen('email_step1')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'email_step1' ? 'bg-[#5046e5] text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              1/4
-            </button>
-            <button
-              onClick={() => setScreen('email_step2')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'email_step2' ? 'bg-[#5046e5] text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              2/4
-            </button>
-            <button
-              onClick={() => setScreen('email_step4')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'email_step4' ? 'bg-[#5046e5] text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              4/4
-            </button>
-            <button
-              onClick={() => setScreen('kakao_login')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'kakao_login' ? 'bg-[#FEE500] text-black' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              카카오
-            </button>
-            <button
-              onClick={() => setScreen('google_select')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'google_select' || screen === 'google_consent'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              구글
-            </button>
-            <button
-              onClick={() => setScreen('apple_login')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                screen === 'apple_login' ? 'bg-black text-white' : 'text-[#464555] hover:bg-white'
-              }`}
-            >
-              Apple
-            </button>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-[#777587] hover:text-[#131b2e] ml-2 shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+  const handleDirectLogin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const idToUse = loginTab === 'id' ? loginId.trim() : loginPhone.trim();
+    if (!idToUse) {
+      alert(loginTab === 'id' ? '아이디 또는 이메일을 입력해 주세요.' : '휴대폰 번호를 입력해 주세요.');
+      return;
+    }
+    if (!loginPassword) {
+      alert('비밀번호를 입력해 주세요.');
+      return;
+    }
 
-        {/* SCREEN 0: 이메일로 로그인 (직접 로그인) */}
+    try {
+      if (saveId) {
+        localStorage.setItem('clipsort_saved_id', idToUse);
+      } else {
+        localStorage.removeItem('clipsort_saved_id');
+      }
+
+      if (autoLogin) {
+        localStorage.setItem('clipsort_auto_login', 'true');
+      } else {
+        localStorage.removeItem('clipsort_auto_login');
+      }
+    } catch {
+      // ignore
+    }
+
+    const email = idToUse.includes('@') ? idToUse : `${idToUse}@clipsort.io`;
+    const nickname = idToUse.includes('@') ? idToUse.split('@')[0] : idToUse;
+
+    onLoginSuccess({
+      isLoggedIn: true,
+      nickname: nickname || '클립마스터',
+      email,
+      provider: 'email',
+    });
+    onClose();
+  };
+
+  const handleFindIdSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!findIdName.trim()) {
+      alert('이름을 입력해 주세요.');
+      return;
+    }
+    if (!findIdContact.trim()) {
+      alert('휴대폰 번호 또는 이메일을 입력해 주세요.');
+      return;
+    }
+    setFoundIdResult('creator.vision@gmail.com');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity overflow-y-auto">
+      {/* Outer Shell */}
+      <div className="w-full max-w-sm sm:max-w-md bg-white rounded-3xl shadow-2xl border border-[#dae2fd]/70 overflow-hidden my-auto flex flex-col relative animate-in zoom-in-95 duration-200">
+        {/* Global Close Button (Top-Right) */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-[#f4f5f8] hover:bg-[#eaedff] text-[#777587] hover:text-[#131b2e] flex items-center justify-center transition-all cursor-pointer"
+          title="닫기"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* SCREEN 0: 로그인 메인 화면 (User requested Kolon Mall style) */}
         {screen === 'email_direct_login' && (
-          <div className="p-5 flex-1 flex flex-col justify-between">
+          <div className="flex-1 flex flex-col justify-between">
             <div>
-              {/* Top Navigation */}
-              <div className="flex items-center justify-between pb-3">
-                <button
-                  onClick={() => setScreen('email_step1')}
-                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#eaedff] active:scale-95"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">이메일 로그인</h1>
-                <div className="w-10" />
+              {/* Header Title */}
+              <div className="pt-7 pb-4 px-6 text-center border-b border-[#f0f2f7]">
+                <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">ClipSort 로그인</h1>
               </div>
 
-              {/* Brand Identity / Greeting Section */}
-              <section className="mt-2 mb-5">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#eaedff] text-[#3625cd] mb-3">
-                  <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                  <span className="text-xs font-semibold tracking-wide">ClipSort AI</span>
-                </div>
-                <h2 className="text-2xl font-bold text-[#131b2e] tracking-tight mb-2 leading-tight">
-                  반가워요!<br />계정 정보를 입력해 주세요
-                </h2>
-                <p className="text-xs text-[#777587] leading-relaxed">
-                  ClipSort에 등록한 이메일과 비밀번호를 입력해주세요.
-                </p>
-              </section>
+              {/* Tabs: 아이디 / 휴대폰 번호 */}
+              <div className="grid grid-cols-2 border-b border-[#e5e7eb] px-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => setLoginTab('id')}
+                  className={`py-3 text-sm font-bold transition-colors relative cursor-pointer ${
+                    loginTab === 'id' ? 'text-[#131b2e]' : 'text-[#8c8c9a] hover:text-[#131b2e]'
+                  }`}
+                >
+                  아이디
+                  {loginTab === 'id' && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#131b2e]" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoginTab('phone')}
+                  className={`py-3 text-sm font-bold transition-colors relative cursor-pointer ${
+                    loginTab === 'phone' ? 'text-[#131b2e]' : 'text-[#8c8c9a] hover:text-[#131b2e]'
+                  }`}
+                >
+                  휴대폰 번호
+                  {loginTab === 'phone' && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#131b2e]" />
+                  )}
+                </button>
+              </div>
 
-              {/* Input Form Area */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleCompleteEmailSignup();
-                }}
-                className="space-y-4"
-              >
-                {/* Email Field */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-[#131b2e]">이메일</label>
+              {/* Form Area */}
+              <form onSubmit={handleDirectLogin} className="p-6 space-y-3.5">
+                {/* ID / Phone Input */}
+                <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e] transition-all">
+                  <label className="block text-[11px] text-[#777587] font-medium">
+                    {loginTab === 'id' ? '아이디' : '휴대폰 번호'}
+                  </label>
                   <input
-                    type="email"
-                    value={emailUser.includes('@') ? emailUser : `${emailUser}@clipsort.io`}
-                    onChange={(e) => setEmailUser(e.target.value)}
-                    placeholder="example@clipsort.io"
-                    required
-                    className="w-full h-12 px-4 bg-white text-[#131b2e] text-sm rounded-xl border border-[#dae2fd] focus:border-[#5046e5] focus:outline-none transition-all"
+                    type={loginTab === 'id' ? 'text' : 'tel'}
+                    value={loginTab === 'id' ? loginId : loginPhone}
+                    onChange={(e) =>
+                      loginTab === 'id' ? setLoginId(e.target.value) : setLoginPhone(e.target.value)
+                    }
+                    placeholder={loginTab === 'id' ? '아이디 또는 이메일' : '010-0000-0000'}
+                    className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
                   />
                 </div>
 
-                {/* Password Field */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-[#131b2e]">비밀번호</label>
-                  <div className="relative flex items-center">
+                {/* Password Input */}
+                <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 flex items-center justify-between focus-within:ring-1 focus-within:ring-[#131b2e] transition-all">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[11px] text-[#777587] font-medium">비밀번호</label>
                     <input
-                      type={showPw ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="비밀번호를 입력하세요"
-                      required
-                      className="w-full h-12 px-4 pr-11 bg-white text-[#131b2e] text-sm rounded-xl border border-[#dae2fd] focus:border-[#5046e5] focus:outline-none transition-all"
+                      type={showPassword ? 'text' : 'password'}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="비밀번호"
+                      className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw(!showPw)}
-                      className="absolute right-3 text-[#777587] hover:text-[#131b2e] p-1"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">
-                        {showPw ? 'visibility' : 'visibility_off'}
-                      </span>
-                    </button>
                   </div>
-                </div>
-
-                {/* Utility Options */}
-                <div className="flex items-center justify-between text-xs pt-1 pb-1">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="w-4 h-4 rounded text-[#5046e5]"
-                    />
-                    <span className="text-[#464555]">로그인 상태 유지</span>
-                  </label>
                   <button
                     type="button"
-                    onClick={() => setScreen('find_password')}
-                    className="text-[#5046e5] font-semibold hover:underline"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[#777587] hover:text-[#131b2e] p-1.5 cursor-pointer transition-colors"
                   >
-                    비밀번호 찾기
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
 
-                {/* Submit button */}
-                <div className="pt-2">
+                {/* Checkboxes: 아이디 저장 & 자동 로그인 */}
+                <div className="flex items-center gap-5 pt-0.5 text-xs text-[#555]">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={saveId}
+                      onChange={(e) => setSaveId(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#131b2e] accent-[#131b2e] cursor-pointer"
+                    />
+                    <span>아이디 저장</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoLogin}
+                      onChange={(e) => setAutoLogin(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#131b2e] accent-[#131b2e] cursor-pointer"
+                    />
+                    <span>자동 로그인</span>
+                  </label>
+                </div>
+
+                {/* 로그인하기 Button */}
+                <button
+                  type="submit"
+                  className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all active:scale-[0.99] cursor-pointer shadow-sm mt-1"
+                >
+                  로그인하기
+                </button>
+
+                {/* Links: 아이디 찾기 | 비밀번호 재설정 */}
+                <div className="flex items-center justify-center gap-3 text-xs text-[#777587] py-1">
                   <button
-                    type="submit"
-                    className="w-full h-13 bg-[#5046e5] hover:bg-[#3625cd] text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      setFoundIdResult(null);
+                      setScreen('find_id');
+                    }}
+                    className="hover:text-[#131b2e] transition-colors cursor-pointer"
                   >
-                    <span>로그인</span>
-                    <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                    아이디 찾기
+                  </button>
+                  <span className="text-[#dae2fd]">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setScreen('find_password')}
+                    className="hover:text-[#131b2e] transition-colors cursor-pointer"
+                  >
+                    비밀번호 재설정
+                  </button>
+                </div>
+
+                {/* Social and Sign up Buttons */}
+                <div className="pt-2 space-y-2 border-t border-[#f0f2f7]">
+                  {/* 카카오로 시작하기 */}
+                  <button
+                    type="button"
+                    onClick={handleKakaoLogin}
+                    className="w-full py-3 px-4 rounded-xl bg-[#FEE500] hover:bg-[#fae100] text-[#191919] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
+                  >
+                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M12 3c-5.523 0-10 3.582-10 8c0 2.88 1.868 5.418 4.717 6.804l-1.196 4.417c-.105.389.314.714.654.507l5.244-3.197c.189.014.38.021.581.021 5.523 0 10-3.582 10-8s-4.477-8-10-8z" />
+                    </svg>
+                    <span>카카오로 시작하기</span>
+                  </button>
+
+                  {/* 구글로 시작하기 */}
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    className="w-full py-3 px-4 rounded-xl bg-white hover:bg-[#f8f9fa] text-[#1f1f1f] font-bold text-xs border border-[#dadce0] flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
+                  >
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"/>
+                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.16 0 9.97 0 12s.45 3.84 1.24 5.42l4.04-3.15z"/>
+                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                    <span>구글로 시작하기</span>
+                  </button>
+
+                  {/* 애플로 시작하기 */}
+                  <button
+                    type="button"
+                    onClick={handleAppleLogin}
+                    className="w-full py-3 px-4 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
+                  >
+                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.38c.62-.75 1.04-1.8 0.93-2.85-.9.04-1.99.6-2.63 1.35-.57.65-1.06 1.72-.93 2.74 1 .08 2.02-.49 2.63-1.24z"/>
+                    </svg>
+                    <span>애플로 시작하기</span>
+                  </button>
+
+                  {/* 회원가입하기 */}
+                  <button
+                    type="button"
+                    onClick={() => setScreen('email_step1')}
+                    className="w-full py-3 px-4 rounded-xl bg-[#f0f2f5] hover:bg-[#e4e6ea] text-[#131b2e] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
+                  >
+                    <span>회원가입하기</span>
                   </button>
                 </div>
               </form>
             </div>
+          </div>
+        )}
 
-            {/* Footer */}
-            <footer className="mt-6 text-center text-xs text-[#777587]">
-              아직 계정이 없으신가요?{' '}
+        {/* SCREEN: 아이디 찾기 */}
+        {screen === 'find_id' && (
+          <div className="p-6 flex-1 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-[#dae2fd]/40">
+                <button
+                  type="button"
+                  onClick={() => setScreen('email_direct_login')}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#f2f3ff] transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">아이디 찾기</h1>
+                <div className="w-9" />
+              </div>
+
+              {foundIdResult ? (
+                <div className="py-6 space-y-4">
+                  <div className="p-4 rounded-2xl bg-[#f2f3ff] border border-[#dae2fd] text-center space-y-2">
+                    <span className="material-symbols-outlined text-[32px] text-[#5046e5]">
+                      account_circle
+                    </span>
+                    <h3 className="text-sm font-bold text-[#131b2e]">회원님의 가입 아이디입니다</h3>
+                    <p className="text-base font-extrabold text-[#3625cd] bg-white py-2.5 px-4 rounded-xl border border-[#dae2fd]">
+                      {foundIdResult}
+                    </p>
+                    <p className="text-[11px] text-[#777587]">
+                      가입일: 2025.01.15 (이메일 인증 완료 계정)
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginId(foundIdResult);
+                      setScreen('email_direct_login');
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all cursor-pointer shadow-sm"
+                  >
+                    로그인하러 가기
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setScreen('find_password')}
+                    className="w-full py-3 rounded-xl bg-[#f0f2f5] hover:bg-[#e4e6ea] text-[#131b2e] font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    비밀번호도 재설정하기
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleFindIdSubmit} className="pt-4 space-y-3.5">
+                  <p className="text-xs text-[#777587] leading-relaxed">
+                    가입 시 등록한 이름과 연락처(휴대폰 번호 또는 이메일)를 입력해 주세요.
+                  </p>
+
+                  <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e]">
+                    <label className="block text-[11px] text-[#777587] font-medium">이름</label>
+                    <input
+                      type="text"
+                      value={findIdName}
+                      onChange={(e) => setFindIdName(e.target.value)}
+                      placeholder="이름 입력 (예: 김클립)"
+                      required
+                      className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
+                    />
+                  </div>
+
+                  <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e]">
+                    <label className="block text-[11px] text-[#777587] font-medium">
+                      휴대폰 번호 또는 이메일
+                    </label>
+                    <input
+                      type="text"
+                      value={findIdContact}
+                      onChange={(e) => setFindIdContact(e.target.value)}
+                      placeholder="010-0000-0000 또는 이메일 입력"
+                      required
+                      className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all cursor-pointer shadow-sm mt-2"
+                  >
+                    아이디 찾기
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div className="pt-4 text-center">
               <button
                 type="button"
-                onClick={() => setScreen('email_step1')}
-                className="text-[#5046e5] font-bold hover:underline ml-1"
+                onClick={() => setScreen('email_direct_login')}
+                className="text-xs text-[#777587] hover:text-[#131b2e] transition-colors cursor-pointer"
               >
-                회원가입하기
+                ← 로그인 화면으로 돌아가기
               </button>
-            </footer>
+            </div>
           </div>
         )}
 
@@ -539,7 +741,11 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div>
               {/* Header */}
               <div className="flex items-center justify-between pb-3">
-                <button onClick={onClose} className="p-1 text-[#131b2e]">
+                <button
+                  type="button"
+                  onClick={() => setScreen('email_direct_login')}
+                  className="p-1 text-[#131b2e] hover:bg-[#eaedff] rounded-full transition-colors cursor-pointer"
+                >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <h2 className="text-base font-bold text-[#131b2e]">회원가입</h2>
@@ -685,8 +891,9 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 <span className="text-xs text-[#777587]">
                   이미 계정이 있으신가요?{' '}
                   <button
-                    onClick={() => setScreen('email_step4')}
-                    className="text-[#5046e5] font-bold underline underline-offset-2 ml-1"
+                    type="button"
+                    onClick={() => setScreen('email_direct_login')}
+                    className="text-[#5046e5] font-bold underline underline-offset-2 ml-1 cursor-pointer"
                   >
                     로그인
                   </button>

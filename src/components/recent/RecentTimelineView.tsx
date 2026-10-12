@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { VideoBookmark } from '../../types';
-import { Trash2 } from 'lucide-react';
+import { Trash2, LogIn } from 'lucide-react';
 
 interface RecentTimelineViewProps {
   bookmarks: VideoBookmark[];
   onChangeCategory: (video: VideoBookmark) => void;
   onDeleteVideo?: (video: VideoBookmark) => void;
   primaryColor?: string;
+  isLoggedIn?: boolean;
+  onRequireAuth?: () => void;
 }
 
 export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
@@ -14,6 +16,8 @@ export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
   onChangeCategory,
   onDeleteVideo,
   primaryColor = '#5046e5',
+  isLoggedIn = false,
+  onRequireAuth,
 }) => {
   // Group bookmarks into Today (오늘) and Yesterday/Older (어제 / 이전)
   const now = Date.now();
@@ -74,11 +78,25 @@ export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
             <span className="material-symbols-outlined text-[28px]">schedule</span>
           </div>
           <h3 className="text-base font-semibold text-[#131b2e] mb-1">
-            최근 저장된 영상이 없습니다
+            {!isLoggedIn ? '저장된 영상이 없습니다' : '최근 저장된 영상이 없습니다'}
           </h3>
-          <p className="text-xs text-[#777587] max-w-sm mx-auto">
-            보관함 탭에서 링크를 추가하면 시간대별로 분류된 타임라인을 확인하실 수 있습니다.
+          <p className="text-xs text-[#777587] max-w-sm mx-auto mb-4 leading-relaxed">
+            {!isLoggedIn
+              ? '로그인 후 영상 링크를 저장하면 타임라인별로 분류된 영상 목록을 확인하실 수 있습니다.'
+              : '보관함 탭에서 링크를 추가하면 시간대별로 분류된 타임라인을 확인하실 수 있습니다.'}
           </p>
+
+          {!isLoggedIn && onRequireAuth && (
+            <button
+              type="button"
+              onClick={onRequireAuth}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs active:scale-95 transition-all cursor-pointer hover:brightness-105"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>로그인하기</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -169,14 +187,12 @@ export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
         </div>
       )}
 
-      {/* Timeline Section: 어제 / 이전 (Yesterday or Older) */}
+      {/* Timeline Section: 어제 / 이전 (Yesterday & Older) */}
       {olderBookmarks.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#94A3B8]" />
-            <h3 className="text-sm font-bold text-[#131b2e]">
-              어제 및 이전 ({olderBookmarks.length})
-            </h3>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#777587]" />
+            <h3 className="text-sm font-bold text-[#131b2e]">어제 / 이전 ({olderBookmarks.length})</h3>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -187,9 +203,10 @@ export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
               >
                 <div className="flex items-center justify-between text-xs text-[#777587] mb-2 font-medium">
                   <div className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-                    <span>{new Date(video.createdAt).toLocaleDateString('ko-KR')}</span>
+                    <span className="material-symbols-outlined text-[14px]">schedule</span>
+                    <span>{formatRelativeTime(video.createdAt)}</span>
                   </div>
+                  <span className="text-[11px] font-semibold text-[#777587]">보관됨</span>
                 </div>
 
                 <div className="flex gap-3 items-start">
@@ -204,6 +221,11 @@ export const RecentTimelineView: React.FC<RecentTimelineViewProps> = ({
                       alt={video.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="material-symbols-outlined text-white text-[20px]">
+                        open_in_new
+                      </span>
+                    </div>
                   </a>
 
                   <div className="flex-1 flex flex-col justify-between h-20">

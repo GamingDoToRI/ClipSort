@@ -151,6 +151,12 @@ export default function App() {
   // Bookmarks state (persistent in localStorage & synced with Firestore)
   const [bookmarks, setBookmarks] = useState<VideoBookmark[]>(() => {
     try {
+      const savedUser = localStorage.getItem('clipsort_user');
+      const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+      // If user is not logged in or in guest mode, do not show any saved videos
+      if (!parsedUser || !parsedUser.isLoggedIn) {
+        return [];
+      }
       const saved = localStorage.getItem('clipsort_bookmarks');
       if (saved) {
         const parsed: VideoBookmark[] = JSON.parse(saved);
@@ -168,16 +174,17 @@ export default function App() {
     } catch {
       // ignore
     }
-    return INITIAL_BOOKMARKS.map((b) => ({
-      ...b,
-      status: 'active' as VideoLinkStatus,
-      inTrash: false,
-    }));
+    return [];
   });
 
   // Trash state
   const [trashItems, setTrashItems] = useState<TrashItem[]>(() => {
     try {
+      const savedUser = localStorage.getItem('clipsort_user');
+      const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+      if (!parsedUser || !parsedUser.isLoggedIn) {
+        return [];
+      }
       const saved = localStorage.getItem('clipsort_trash');
       if (saved) {
         const parsed: TrashItem[] = JSON.parse(saved);
@@ -245,13 +252,20 @@ export default function App() {
     []
   );
 
-  // Validate Firestore connection on boot and sync initial bookmarks
+  // Validate Firestore connection on boot and sync bookmarks when logged in
   useEffect(() => {
     testFirestoreConnection().catch((err) => console.warn('Firestore test connection:', err));
 
-    // Subscribe to Firestore for real-time video sync
+    // When logged out or guest, clear bookmarks and trash, and do not listen to Firestore
+    if (!user.isLoggedIn) {
+      setBookmarks([]);
+      setTrashItems([]);
+      return;
+    }
+
+    // Subscribe to Firestore for real-time video sync when logged in
     const unsubscribe = subscribeToVideos((firestoreVideos) => {
-      if (firestoreVideos.length > 0) {
+      if (firestoreVideos && firestoreVideos.length > 0) {
         const normalized = firestoreVideos.map((v) => {
           let category = v.category;
           if (category === '요리' || category === '맛집') {
@@ -273,25 +287,37 @@ export default function App() {
 
         setBookmarks(activeVideos);
         setTrashItems(trashVideos);
+      } else {
+        // If Firestore is empty for this user, check local saved bookmarks
+        try {
+          const saved = localStorage.getItem('clipsort_bookmarks');
+          if (saved) {
+            setBookmarks(JSON.parse(saved));
+          }
+        } catch {
+          // ignore
+        }
       }
     });
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [user.isLoggedIn]);
 
-  // Save bookmarks to localStorage
+  // Save bookmarks to localStorage only when user is logged in
   useEffect(() => {
+    if (!user.isLoggedIn) return;
     try {
       localStorage.setItem('clipsort_bookmarks', JSON.stringify(bookmarks));
     } catch {
       // ignore
     }
-  }, [bookmarks]);
+  }, [bookmarks, user.isLoggedIn]);
 
-  // Save trash to localStorage & purge expired items (> 30 days)
+  // Save trash to localStorage & purge expired items (> 30 days) only when logged in
   useEffect(() => {
+    if (!user.isLoggedIn) return;
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const validItems = trashItems.filter((item) => now - item.deletedAt < thirtyDaysMs);
@@ -305,16 +331,40 @@ export default function App() {
     } catch {
       // ignore
     }
-  }, [trashItems]);
+  }, [trashItems, user.isLoggedIn]);
 
   // Save user to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('clipsort_user', JSON.stringify(user));
+      if (user.isLoggedIn) {
+        localStorage.setItem('clipsort_user', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('clipsort_user');
+      }
     } catch {
       // ignore
     }
   }, [user]);
+
+  // Explicit Logout Handler that clears all video data and switches to Guest mode
+  const handleLogout = useCallback(() => {
+    setUser({
+      isLoggedIn: false,
+      nickname: '게스트',
+      email: '',
+      provider: 'email',
+    });
+    setBookmarks([]);
+    setTrashItems([]);
+    try {
+      localStorage.removeItem('clipsort_user');
+      localStorage.removeItem('clipsort_bookmarks');
+      localStorage.removeItem('clipsort_trash');
+    } catch {
+      // ignore
+    }
+    showToast('로그아웃 되었습니다.');
+  }, [showToast]);
 
   // Derived list of all available categories
   // 1. '전체' is always first
@@ -341,25 +391,30 @@ export default function App() {
       }
     });
 
-    bookmarks.forEach((b) => {
-      let norm = b.category ? b.category.trim() : '';
-      if (norm === '요리' || norm === '맛집') norm = '음식';
-      if (norm === '야구' || norm === '스포츠') norm = '운동';
-      if (norm && !deletedSet.has(norm)) {
-        set.add(norm);
-      }
-    });
+    if (user.isLoggedIn) {
+      bookmarks.forEach((b) => {
+        let norm = b.category ? b.category.trim() : '';
+        if (norm === '요리' || norm === '맛집') norm = '음식';
+        if (norm === '야구' || norm === '스포츠') norm = '운동';
+        if (norm && !deletedSet.has(norm)) {
+          set.add(norm);
+        }
+      });
+    }
 
     return Array.from(set);
-  }, [bookmarks, userCategories, deletedCategories]);
+  }, [bookmarks, userCategories, deletedCategories, user.isLoggedIn]);
 
   // Filtered bookmarks based on activeCategory
   const filteredBookmarks = useMemo(() => {
+    if (!user.isLoggedIn) {
+      return [];
+    }
     if (activeCategory === '전체') {
       return bookmarks;
     }
     return bookmarks.filter((b) => b.category === activeCategory);
-  }, [bookmarks, activeCategory]);
+  }, [bookmarks, activeCategory, user.isLoggedIn]);
 
   // Add new category directly from CategoryChangeModal or anywhere
   const handleAddNewCategory = (newCat: string) => {
@@ -495,6 +550,12 @@ export default function App() {
 
   // Save a new link (extract metadata + AI category classification + Firebase save)
   const handleSaveLink = async (url: string, defaultTitle?: string) => {
+    if (!user.isLoggedIn) {
+      setIsAuthOpen(true);
+      showToast('영상 저장은 로그인 후 이용하실 수 있습니다.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       let title = defaultTitle || '';
@@ -769,7 +830,7 @@ export default function App() {
             <CategoryTabs
               categories={categories}
               activeCategory={activeCategory}
-              bookmarks={bookmarks}
+              bookmarks={user.isLoggedIn ? bookmarks : []}
               primaryColor={themeColor.hex}
               onSelectCategory={(cat) => setActiveCategory(cat)}
               onRenameCategory={handleRenameCategory}
@@ -778,10 +839,12 @@ export default function App() {
 
             {/* 영상 카드 파트 */}
             <VideoCardList
-              videos={filteredBookmarks}
+              videos={user.isLoggedIn ? filteredBookmarks : []}
               activeCategory={activeCategory}
               recentAddedId={recentAddedId}
               primaryColor={themeColor.hex}
+              isLoggedIn={user.isLoggedIn}
+              onRequireAuth={() => setIsAuthOpen(true)}
               onChangeCategory={(video) => setVideoToChange(video)}
               onDeleteVideo={(video) => setVideoToDeleteConfirm(video)}
             />
@@ -791,8 +854,10 @@ export default function App() {
         {/* Tab 2: 최근 분류 (Timeline) */}
         {activeTab === 'recent' && (
           <RecentTimelineView
-            bookmarks={bookmarks}
+            bookmarks={user.isLoggedIn ? bookmarks : []}
             primaryColor={themeColor.hex}
+            isLoggedIn={user.isLoggedIn}
+            onRequireAuth={() => setIsAuthOpen(true)}
             onChangeCategory={(video) => setVideoToChange(video)}
             onDeleteVideo={(video) => setVideoToDeleteConfirm(video)}
           />
@@ -801,7 +866,7 @@ export default function App() {
         {/* Tab 3: 휴지통 (Trash) */}
         {activeTab === 'trash' && (
           <TrashView
-            trashItems={trashItems}
+            trashItems={user.isLoggedIn ? trashItems : []}
             primaryColor={themeColor.hex}
             onRestore={handleRestoreFromTrash}
             onPermanentDelete={handlePermanentDelete}
@@ -818,19 +883,7 @@ export default function App() {
             displayMode={displayMode}
             onNavigateSubPage={(sub: SettingsSubPage) => setSettingsSubPage(sub)}
             onOpenAuth={() => setIsAuthOpen(true)}
-            onLogout={() => {
-              setUser({
-                isLoggedIn: false,
-                nickname: '게스트',
-                email: '',
-              });
-              try {
-                localStorage.removeItem('clipsort_user');
-              } catch {
-                // ignore
-              }
-              showToast('로그아웃 되었습니다.');
-            }}
+            onLogout={handleLogout}
             onShowToast={(msg) => showToast(msg)}
           />
         )}
@@ -849,17 +902,7 @@ export default function App() {
             onShowToast={(msg) => showToast(msg)}
             onNavigateChangePassword={() => setSettingsSubPage('change_password')}
             onLogout={() => {
-              setUser({
-                isLoggedIn: false,
-                nickname: '게스트',
-                email: '',
-              });
-              try {
-                localStorage.removeItem('clipsort_user');
-              } catch {
-                // ignore
-              }
-              showToast('로그아웃 되었습니다.');
+              handleLogout();
               setSettingsSubPage(null);
             }}
           />

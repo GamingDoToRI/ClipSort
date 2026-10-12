@@ -55,6 +55,7 @@ export type AuthScreenType =
   | 'email_step2'
   | 'email_step4'
   | 'email_direct_login'
+  | 'find_id'
   | 'find_password'
   | 'reset_password_step'
   | 'kakao_login'
