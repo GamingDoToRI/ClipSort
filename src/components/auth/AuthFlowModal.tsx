@@ -99,6 +99,10 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   // Step 2 state (OTP - 6자리 모두 비워진 빈칸으로 시작)
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState(300); // 05:00
+  const [approvalToken, setApprovalToken] = useState<string | null>(null);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Step 4 state (Password)
@@ -134,7 +138,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
   if (!isOpen) return null;
 
-  const fullEmail = emailUser.includes('@') ? emailUser : `${emailUser}${selectedDomain}`;
+  const fullEmail = (emailUser.includes('@') ? emailUser : `${emailUser}${selectedDomain}`).toLowerCase().trim();
 
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -153,8 +157,177 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     });
   };
 
-  const handleCompleteEmailSignup = () => {
-    alert('이메일 회원가입은 서버 측 이메일 발송 및 인증 기능이 추가될 때까지 비활성화되어 있습니다. Google 로그인을 이용해 주세요.');
+  // API 1: Send OTP Verification Code via Resend
+  const handleRequestVerificationCode = async () => {
+    if (!emailUser.trim()) {
+      alert('이메일 주소를 입력해 주세요.');
+      return;
+    }
+    if (!terms.age || !terms.service || !terms.privacy) {
+      alert('필수 약관에 모두 동의해 주세요.');
+      return;
+    }
+
+    setIsSendingCode(true);
+    setVerificationError(null);
+
+    try {
+      const response = await fetch('/api/send-verification-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: fullEmail }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        const errorMsg = data?.error || '인증번호 발송에 실패했습니다.';
+        setVerificationError(errorMsg);
+        alert(errorMsg);
+        return;
+      }
+
+      // Reset OTP inputs and timer
+      setOtp(['', '', '', '', '', '']);
+      setTimerSeconds(data.expiresInSeconds || 300);
+      setApprovalToken(null);
+      setScreen('email_step2');
+
+      setTimeout(() => {
+        otpInputRefs.current[0]?.focus();
+      }, 150);
+    } catch (err: any) {
+      const netMsg = err.message || '네트워크 오류가 발생했습니다.';
+      setVerificationError(netMsg);
+      alert(netMsg);
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  // API 2: Verify 6-digit OTP Code
+  const handleVerifyOtpSubmit = async () => {
+    const enteredCode = otp.join('');
+    if (enteredCode.length < 6) {
+      alert('인증번호 6자리를 모두 입력해 주세요.');
+      return;
+    }
+
+    if (timerSeconds <= 0) {
+      alert('인증번호 입력 유효시간(5분)이 만료되었습니다. "다시 보내기"를 눌러주세요.');
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    setVerificationError(null);
+
+    try {
+      const response = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: fullEmail,
+          code: enteredCode,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        const errorMsg = data?.error || data?.message || '인증번호가 일치하지 않습니다.';
+        setVerificationError(errorMsg);
+        alert(errorMsg);
+        return;
+      }
+
+      // Successful verification -> Store approval token and proceed to Step 4 (Password Setup)
+      setApprovalToken(data.approvalToken);
+      setVerificationError(null);
+      setScreen('email_step4');
+    } catch (err: any) {
+      const netMsg = err.message || '인증번호 검증 중 오류가 발생했습니다.';
+      setVerificationError(netMsg);
+      alert(netMsg);
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
+  // API 3: Complete Signup & Sign In directly with Firebase Auth
+  const handleCompleteEmailSignup = async () => {
+    if (!approvalToken) {
+      alert('이메일 인증이 완료되지 않았습니다. 인증번호를 먼저 확인해 주세요.');
+      setScreen('email_step2');
+      return;
+    }
+
+    if (!password) {
+      alert('비밀번호를 입력해 주세요.');
+      return;
+    }
+
+    if (password.length < 8) {
+      alert('비밀번호는 최소 8자리 이상이어야 합니다.');
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const response = await fetch('/api/complete-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: fullEmail,
+          password,
+          nickname: nickname.trim() || fullEmail.split('@')[0],
+          approvalToken,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        const errorMsg = data?.error || '회원가입 처리에 실패했습니다.';
+        setAuthError(errorMsg);
+        alert(errorMsg);
+        return;
+      }
+
+      // Auto login with the newly created credentials
+      try {
+        const loginRes = await signInWithEmailAndPassword(auth, fullEmail, password);
+        const fbUser = loginRes.user;
+
+        onLoginSuccess({
+          isLoggedIn: true,
+          uid: fbUser.uid,
+          nickname: fbUser.displayName || nickname.trim() || fullEmail.split('@')[0],
+          email: fbUser.email || fullEmail,
+          provider: 'email',
+        });
+        alert('회원가입과 로그인이 성공적으로 완료되었습니다! 환영합니다.');
+        onClose();
+      } catch (loginErr: any) {
+        console.warn('Auto sign-in after creation notice:', loginErr);
+        // Pre-fill email in direct login screen so user can log in with one click
+        setLoginId(fullEmail);
+        setScreen('email_direct_login');
+        alert('회원가입이 완료되었습니다! 생성된 계정 정보로 로그인해 주세요.');
+      }
+    } catch (err: any) {
+      const netMsg = err.message || '회원가입 처리 중 네트워크 오류가 발생했습니다.';
+      setAuthError(netMsg);
+      alert(netMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleKakaoLogin = () => {
@@ -936,27 +1109,21 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => {
-                  if (!emailUser.trim()) {
-                    alert('이메일 주소를 입력해 주세요.');
-                    return;
-                  }
-                  if (!terms.age || !terms.service || !terms.privacy) {
-                    alert('필수 약관에 모두 동의해 주세요.');
-                    return;
-                  }
-                  // 6자리 모두 비워진 상태로 리셋
-                  setOtp(['', '', '', '', '', '']);
-                  setTimerSeconds(300);
-                  setScreen('email_step2');
-                  setTimeout(() => {
-                    otpInputRefs.current[0]?.focus();
-                  }, 100);
-                }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                onClick={handleRequestVerificationCode}
+                disabled={isSendingCode}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
               >
-                <span>인증번호 받기</span>
-                <ChevronRight className="w-4 h-4" />
+                {isSendingCode ? (
+                  <>
+                    <RotateCw className="w-4 h-4 animate-spin" />
+                    <span>인증번호 발송 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>인증번호 받기</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               <div className="text-center">
@@ -1074,27 +1241,32 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
               {/* Timer row */}
               <div className="flex items-center justify-between text-xs mb-6">
-                <span className="font-bold text-[#5046e5] flex items-center gap-1">
-                  ⏱️ {formatTimer(timerSeconds)} 남음
+                <span className={`font-bold flex items-center gap-1 ${timerSeconds <= 0 ? 'text-rose-500' : 'text-[#5046e5]'}`}>
+                  ⏱️ {timerSeconds <= 0 ? '인증시간 만료' : `${formatTimer(timerSeconds)} 남음`}
                 </span>
                 <span className="text-[#777587]">
                   인증번호가 오지 않나요?{' '}
                   <button
                     type="button"
+                    disabled={isSendingCode}
                     onClick={() => {
                       setOtp(['', '', '', '', '', '']);
-                      setTimerSeconds(300);
-                      alert('인증번호가 재전송되었습니다.');
-                      setTimeout(() => {
-                        otpInputRefs.current[0]?.focus();
-                      }, 100);
+                      handleRequestVerificationCode();
                     }}
-                    className="text-[#5046e5] font-bold underline cursor-pointer"
+                    className="text-[#5046e5] font-bold underline cursor-pointer disabled:opacity-50"
                   >
-                    다시 보내기
+                    {isSendingCode ? '재전송 중...' : '다시 보내기'}
                   </button>
                 </span>
               </div>
+
+              {/* Error notice if any */}
+              {verificationError && (
+                <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2">
+                  <span className="font-bold">⚠️</span>
+                  <span>{verificationError}</span>
+                </div>
+              )}
 
               {/* Info Notice */}
               <div className="p-3.5 rounded-2xl bg-[#f2f3ff] border border-[#dae2fd] flex items-start gap-2.5 text-xs text-[#464555]">
@@ -1107,18 +1279,21 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div className="pt-6">
               <button
                 type="button"
-                onClick={() => {
-                  const enteredCode = otp.join('');
-                  if (enteredCode.length < 6) {
-                    alert('인증번호 6자리를 모두 입력해 주세요.');
-                    return;
-                  }
-                  alert('현재 6자리 이메일 인증번호 발송 및 검증 서버가 준비 중입니다. 실제 서버 연동 전까지는 임의 인증 완료가 제한되오니, 현재 활성화된 Google 로그인을 이용해 주세요.');
-                }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                onClick={handleVerifyOtpSubmit}
+                disabled={isVerifyingCode || otp.join('').length < 6}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
               >
-                <span>다음</span>
-                <ChevronRight className="w-4 h-4" />
+                {isVerifyingCode ? (
+                  <>
+                    <RotateCw className="w-4 h-4 animate-spin" />
+                    <span>인증번호 확인 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>다음</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1242,13 +1417,29 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
             {/* Bottom Actions */}
             <div className="pt-4 space-y-2">
+              {authError && (
+                <div className="mb-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2">
+                  <span className="font-bold">⚠️</span>
+                  <span>{authError}</span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handleCompleteEmailSignup}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all"
+                disabled={isSubmitting || !password || password !== passwordConfirm}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
               >
-                <span>이메일로 로그인하기</span>
-                <ChevronRight className="w-4 h-4" />
+                {isSubmitting ? (
+                  <>
+                    <RotateCw className="w-4 h-4 animate-spin" />
+                    <span>계정 생성 및 로그인 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>회원가입 완료 및 로그인</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
               <p className="text-[10px] text-center text-[#777587]">
                 가입 시 서비스 이용약관 및 개인정보 처리방침에 동의하게 됩니다.

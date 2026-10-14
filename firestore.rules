@@ -33,5 +33,10 @@ service cloud.firestore {
         resource.data.userId == null
       );
     }
+
+    // System email verification tokens collection (Strictly server-side access only via Admin SDK)
+    match /_system_email_verifications/{docId} {
+      allow read, write: if false;
+    }
   }
 }

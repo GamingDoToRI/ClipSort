@@ -213,14 +213,19 @@ export async function handleSendTestEmail(req: any, res: any) {
       });
     }
 
-    // 2. Validate ADMIN_UID configuration on server
-    const adminUid = process.env.ADMIN_UID?.trim();
-    if (!adminUid) {
-      console.warn('[ClipSort Admin Auth] ADMIN_UID 환경변수가 서버에 등록되어 있지 않습니다.');
+    // 2. Check for required server environment variables and list specifically which are missing
+    const missingEnvVars: string[] = [];
+    if (!process.env.RESEND_API_KEY?.trim()) missingEnvVars.push('RESEND_API_KEY');
+    if (!process.env.RESEND_TEST_EMAIL?.trim()) missingEnvVars.push('RESEND_TEST_EMAIL');
+    if (!process.env.ADMIN_UID?.trim()) missingEnvVars.push('ADMIN_UID');
+
+    if (missingEnvVars.length > 0) {
+      const missingList = missingEnvVars.join(', ');
+      console.warn(`[ClipSort Email API] 서버 필수 환경변수 누락: ${missingList}`);
       return res.status(500).json({
         success: false,
-        error:
-          '서버에 ADMIN_UID 환경변수가 등록되어 있지 않습니다. Vercel 또는 .env에 관리자 UID를 설정해 주세요.',
+        error: `서버 환경변수가 누락되었습니다: [${missingList}]. Vercel 환경변수 또는 로컬 .env 설정을 확인해 주세요.`,
+        missingVariables: missingEnvVars,
       });
     }
 

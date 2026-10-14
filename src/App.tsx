@@ -20,6 +20,7 @@ import { VersionInfoSubView } from './components/settings/VersionInfoSubView';
 import { ContactSubView } from './components/settings/ContactSubView';
 import { OpenSourceSubView } from './components/settings/OpenSourceSubView';
 import { TrashView } from './components/trash/TrashView';
+import { AdminEmailTestPanel } from './components/dev/AdminEmailTestPanel';
 import {
   VideoBookmark,
   TrashItem,
@@ -1123,6 +1124,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Dev-only Admin Email Test Panel (Tree-shaken / omitted in production build) */}
+      <AdminEmailTestPanel
+        currentUserId={user.uid}
+        currentUserEmail={user.email}
+        isLoggedIn={user.isLoggedIn}
+        onShowToast={showToast}
+      />
 
       {/* 하단 고정 네비게이션 바 (보관함, 최근 분류, 휴지통, 설정) */}
       <BottomNavBar

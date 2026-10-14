@@ -4,6 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { handleExtractAndClassify, handleClassifyOnly } from './src/server/classificationService.js';
 import { handleSendTestEmail } from './src/server/emailTestService.js';
+import { handleSendVerificationCode } from './api/send-verification-code.js';
+import { handleVerifyCode } from './api/verify-code.js';
+import { handleCompleteSignup } from './api/complete-signup.js';
 
 dotenv.config();
 
@@ -19,6 +22,11 @@ app.use(express.json());
 // Resend email test endpoint (supports both /api/send-test-email and alias /api/test-email)
 app.all('/api/send-test-email', handleSendTestEmail);
 app.all('/api/test-email', handleSendTestEmail);
+
+// Email Signup & OTP Verification endpoints
+app.all('/api/send-verification-code', handleSendVerificationCode);
+app.all('/api/verify-code', handleVerifyCode);
+app.all('/api/complete-signup', handleCompleteSignup);
 
 // YouTube & URL metadata extraction and AI categorization
 app.all('/api/extract-and-classify', handleExtractAndClassify);
