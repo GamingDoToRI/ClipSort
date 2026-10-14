@@ -11,6 +11,7 @@ export interface VideoBookmark {
   status?: VideoLinkStatus; // 'active' (정상 저장), 'source_deleted' (SNS 원본 삭제됨), 'trash_purged' (영구 삭제됨)
   inTrash?: boolean;
   trashedAt?: number;
+  userId?: string;
 }
 
 export interface TrashItem {
@@ -21,6 +22,7 @@ export interface TrashItem {
 
 export interface UserProfile {
   isLoggedIn: boolean;
+  uid?: string;
   nickname: string;
   email: string;
   avatarUrl?: string;

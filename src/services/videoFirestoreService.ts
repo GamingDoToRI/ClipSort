@@ -6,7 +6,7 @@ import {
   updateDoc,
   onSnapshot,
   query,
-  orderBy,
+  where,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -15,13 +15,15 @@ import { VideoBookmark, VideoLinkStatus } from '../types';
 const VIDEOS_COLLECTION = 'videos';
 
 /**
- * Save a newly added video bookmark to Firestore
+ * Save a newly added video bookmark to Firestore (partitioned by userId)
  */
-export async function saveVideoToFirestore(video: VideoBookmark): Promise<void> {
+export async function saveVideoToFirestore(video: VideoBookmark, userId?: string): Promise<void> {
   try {
     const docRef = doc(db, VIDEOS_COLLECTION, video.id);
+    const finalUserId = video.userId || userId || null;
     await setDoc(docRef, {
       ...video,
+      userId: finalUserId,
       status: video.status || 'active',
       inTrash: video.inTrash || false,
       trashedAt: video.trashedAt || null,
@@ -132,13 +134,23 @@ export async function setVideoStatusInFirestore(
 }
 
 /**
- * Listen to real-time videos collection from Firestore
+ * Listen to real-time videos collection from Firestore partitioned by userId
  */
 export function subscribeToVideos(
+  userId: string,
   onData: (videos: VideoBookmark[]) => void,
   onError?: (error: Error) => void
 ) {
-  const q = query(collection(db, VIDEOS_COLLECTION), orderBy('createdAt', 'desc'));
+  if (!userId) {
+    onData([]);
+    return () => {};
+  }
+
+  const q = query(
+    collection(db, VIDEOS_COLLECTION),
+    where('userId', '==', userId)
+  );
+
   return onSnapshot(
     q,
     (snapshot) => {
@@ -149,15 +161,18 @@ export function subscribeToVideos(
           id: docSnap.id,
           title: data.title || '',
           thumbnail: data.thumbnail || '',
-          category: data.category || '기타',
+          category: data.category || '미분류',
           url: data.url || '',
           createdAt: data.createdAt || Date.now(),
           source: data.source || 'web',
           status: (data.status as VideoLinkStatus) || 'active',
           inTrash: !!data.inTrash,
           trashedAt: data.trashedAt || undefined,
+          userId: data.userId || userId,
         });
       });
+      // Sort client-side by createdAt descending to avoid composite index requirement
+      videos.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       onData(videos);
     },
     (err) => {

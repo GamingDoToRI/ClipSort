@@ -160,13 +160,15 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                     className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-150 active:scale-95 cursor-pointer flex items-center gap-1.5 ${
                       isActive
                         ? 'text-white shadow-sm ring-2 ring-offset-1'
+                        : cat === '미분류' && count > 0
+                        ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300'
                         : 'bg-white text-[#464555] hover:text-[#131b2e] hover:bg-[#f2f3ff] border border-[#dae2fd]/70'
                     }`}
                     style={
                       isActive
                         ? {
-                            backgroundColor: primaryColor,
-                            boxShadow: `0 2px 8px -1px ${primaryColor}40`,
+                            backgroundColor: cat === '미분류' ? '#d97706' : primaryColor,
+                            boxShadow: `0 2px 8px -1px ${cat === '미분류' ? '#d97706' : primaryColor}40`,
                           }
                         : undefined
                     }
@@ -179,12 +181,15 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                         check
                       </span>
                     )}
+                    {cat === '미분류' && count > 0 && !isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    )}
                     <span>{cat}</span>
                     {count > 0 && <span className="opacity-80 font-normal">({count})</span>}
                   </button>
 
-                  {/* Edit Button (Pencil Icon) in upper right on hover - exclude "전체" */}
-                  {!isAll && (
+                  {/* Edit Button (Pencil Icon) in upper right on hover - exclude "전체" and "미분류" */}
+                  {!isAll && cat !== '미분류' && (
                     <button
                       type="button"
                       onClick={(e) => handleOpenMenu(e, cat)}

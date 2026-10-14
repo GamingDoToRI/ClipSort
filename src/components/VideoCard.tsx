@@ -126,12 +126,22 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         <div className="pt-2 border-t border-[#f2f3ff] flex items-center justify-between gap-2">
           {/* Assigned Category Name */}
           <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-semibold shadow-xs truncate max-w-[120px]"
-              style={{ backgroundColor: primaryColor }}
-            >
-              {video.category}
-            </span>
+            {video.category === '미분류' ? (
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-xs"
+                title="카테고리가 분류되지 않았습니다. 카테고리 변경 버튼을 눌러 지정해주세요."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>분류 필요</span>
+              </span>
+            ) : (
+              <span
+                className="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-semibold shadow-xs truncate max-w-[120px]"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {video.category}
+              </span>
+            )}
           </div>
 
           {/* Action Buttons: Category Change & Delete */}
@@ -143,12 +153,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                 e.stopPropagation();
                 onChangeCategory(video);
               }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#464555] hover:text-[#3625cd] hover:bg-[#f2f3ff] border border-[#dae2fd]/60 transition-colors cursor-pointer"
-              title="카테고리 변경"
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                video.category === '미분류'
+                  ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 font-semibold shadow-xs'
+                  : 'text-[#464555] hover:text-[#3625cd] hover:bg-[#f2f3ff] border border-[#dae2fd]/60'
+              }`}
+              title={video.category === '미분류' ? '카테고리 지정하기 (분류 필요)' : '카테고리 변경'}
             >
-              <Edit3 className="w-3 h-3 text-[#5046e5]" />
+              <Edit3 className={`w-3 h-3 ${video.category === '미분류' ? 'text-amber-600' : 'text-[#5046e5]'}`} />
               <span className="hidden sm:inline">카테고리</span>
-              <span>변경</span>
+              <span>{video.category === '미분류' ? '지정' : '변경'}</span>
             </button>
 
             {/* Delete Button (Moved to trash) */}

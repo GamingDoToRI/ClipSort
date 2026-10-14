@@ -102,7 +102,11 @@ export const CategoryChangeModal: React.FC<CategoryChangeModalProps> = ({
                 {video.source === 'instagram' ? 'Instagram' : 'YouTube'}
               </span>
               <span>•</span>
-              <span className="text-[#5046e5] font-semibold">{video.category}</span>
+              {video.category === '미분류' ? (
+                <span className="text-amber-600 font-bold">미분류 (분류 필요)</span>
+              ) : (
+                <span className="text-[#5046e5] font-semibold">{video.category}</span>
+              )}
             </div>
             <p className="text-sm font-bold text-[#131b2e] truncate leading-tight">
               {video.title}

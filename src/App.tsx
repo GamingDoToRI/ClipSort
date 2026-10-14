@@ -39,7 +39,12 @@ import {
   deleteVideoFromFirestore,
   subscribeToVideos,
 } from './services/videoFirestoreService';
-import { testFirestoreConnection } from './lib/firebase';
+import {
+  auth,
+  signOut,
+  onAuthStateChanged,
+  testFirestoreConnection,
+} from './lib/firebase';
 import { classifyContentClientSide } from './services/classificationClient';
 
 export default function App() {
@@ -252,19 +257,46 @@ export default function App() {
     []
   );
 
+  // Listen to Firebase Auth state changes for persistent login across page refreshes
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        setUser({
+          isLoggedIn: true,
+          uid: fbUser.uid,
+          nickname: fbUser.displayName || fbUser.email?.split('@')[0] || '클립사용자',
+          email: fbUser.email || '',
+          avatarUrl: fbUser.photoURL || undefined,
+          provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'email',
+        });
+      } else {
+        setUser({
+          isLoggedIn: false,
+          nickname: '게스트',
+          email: '',
+          provider: 'email',
+        });
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
   // Validate Firestore connection on boot and sync bookmarks when logged in
   useEffect(() => {
     testFirestoreConnection().catch((err) => console.warn('Firestore test connection:', err));
 
     // When logged out or guest, clear bookmarks and trash, and do not listen to Firestore
-    if (!user.isLoggedIn) {
+    if (!user.isLoggedIn || !user.uid) {
       setBookmarks([]);
       setTrashItems([]);
       return;
     }
 
-    // Subscribe to Firestore for real-time video sync when logged in
-    const unsubscribe = subscribeToVideos((firestoreVideos) => {
+    const currentUserId = user.uid;
+
+    // Subscribe to Firestore for real-time video sync when logged in (partitioned by currentUserId)
+    const unsubscribe = subscribeToVideos(currentUserId, (firestoreVideos) => {
       if (firestoreVideos && firestoreVideos.length > 0) {
         const normalized = firestoreVideos.map((v) => {
           let category = v.category;
@@ -288,11 +320,18 @@ export default function App() {
         setBookmarks(activeVideos);
         setTrashItems(trashVideos);
       } else {
-        // If Firestore is empty for this user, check local saved bookmarks
+        // If Firestore is empty for this user, check local saved bookmarks to preserve prior data
         try {
           const saved = localStorage.getItem('clipsort_bookmarks');
           if (saved) {
-            setBookmarks(JSON.parse(saved));
+            const localVideos: VideoBookmark[] = JSON.parse(saved);
+            if (localVideos.length > 0) {
+              setBookmarks(localVideos);
+              // Migrate local bookmarks to this user's UID in Firestore
+              localVideos.forEach((v) => {
+                saveVideoToFirestore({ ...v, userId: currentUserId }, currentUserId).catch(() => {});
+              });
+            }
           }
         } catch {
           // ignore
@@ -303,7 +342,7 @@ export default function App() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [user.isLoggedIn]);
+  }, [user.isLoggedIn, user.uid]);
 
   // Save bookmarks to localStorage only when user is logged in
   useEffect(() => {
@@ -346,8 +385,13 @@ export default function App() {
     }
   }, [user]);
 
-  // Explicit Logout Handler that clears all video data and switches to Guest mode
-  const handleLogout = useCallback(() => {
+  // Explicit Logout Handler using Firebase signOut
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Firebase signOut error:', err);
+    }
     setUser({
       isLoggedIn: false,
       nickname: '게스트',
@@ -402,7 +446,12 @@ export default function App() {
       });
     }
 
-    return Array.from(set);
+    const list = Array.from(set);
+    // Ensure '미분류' is placed at the end of the category tabs if present
+    if (list.includes('미분류')) {
+      return [...list.filter((c) => c !== '미분류'), '미분류'];
+    }
+    return list;
   }, [bookmarks, userCategories, deletedCategories, user.isLoggedIn]);
 
   // Filtered bookmarks based on activeCategory
@@ -524,7 +573,7 @@ export default function App() {
           if (fallbackCat && !updatedDeleted.includes(fallbackCat)) {
             newCat = fallbackCat;
           } else {
-            newCat = '기타';
+            newCat = '미분류';
           }
         }
 
@@ -639,18 +688,22 @@ export default function App() {
         }
       }
 
-      // If category is still empty or default '라이프스타일' and content hints point to another category, use smart semantic classifier
-      if (!category || category === '라이프스타일') {
+      // If category is still empty, default '라이프스타일', '기타', or '미분류', run smart semantic classifier
+      if (!category || category === '라이프스타일' || category === '기타' || category === '미분류') {
         const smartCat = classifyContentClientSide(title, url, thumbnail, deletedCategories, categories);
-        if (smartCat && smartCat !== '기타') {
+        if (smartCat && smartCat !== '기타' && smartCat !== '미분류') {
           category = smartCat;
-        } else if (!category) {
-          category = smartCat;
+        } else if (!category || category === '기타') {
+          category = '미분류';
         }
       }
 
+      if (!category || category === '기타') {
+        category = '미분류';
+      }
+
       // If the AI classified this video into a completely new category, register it to userCategories so it appears in the tabs
-      if (category && category !== '전체' && !deletedCategories.includes(category)) {
+      if (category && category !== '전체' && category !== '미분류' && !deletedCategories.includes(category)) {
         setUserCategories((prev) => {
           if (!prev.includes(category)) {
             return [...prev, category];
@@ -670,10 +723,11 @@ export default function App() {
         source,
         status: 'active' as VideoLinkStatus,
         inTrash: false,
+        userId: user.uid,
       };
 
-      // Save to Firestore Database
-      saveVideoToFirestore(newBookmark).catch((err) => {
+      // Save to Firestore Database partitioned by user.uid
+      saveVideoToFirestore(newBookmark, user.uid).catch((err) => {
         console.warn('Firestore database save fallback:', err);
       });
 
@@ -681,7 +735,11 @@ export default function App() {
       setRecentAddedId(newId);
 
       // Level 3 Floating Toast
-      showToast('저장 및 AI 분류가 완료되었습니다', category, () => {
+      const toastMsg =
+        category === '미분류'
+          ? '영상이 저장되었습니다 (분류 작업 필요)'
+          : '저장 및 AI 분류가 완료되었습니다';
+      showToast(toastMsg, category, () => {
         handleDeleteVideo(newBookmark);
       });
     } catch (err) {

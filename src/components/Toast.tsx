@@ -46,9 +46,19 @@ export const Toast: React.FC<ToastProps> = ({
             </p>
             {categoryHint && (
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#818CF8]" />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    categoryHint === '미분류' ? 'bg-amber-400 animate-pulse' : 'bg-[#818CF8]'
+                  }`}
+                />
                 <p className="text-xs text-white/80 font-medium">
-                  <span className="text-[#818CF8] font-bold">'{categoryHint}'</span> 카테고리로 분류됨
+                  {categoryHint === '미분류' ? (
+                    <span className="text-amber-300 font-bold">'미분류' (카테고리 지정 필요)</span>
+                  ) : (
+                    <>
+                      <span className="text-[#818CF8] font-bold">'{categoryHint}'</span> 카테고리로 분류됨
+                    </>
+                  )}
                 </p>
               </div>
             )}

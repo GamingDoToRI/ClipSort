@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   ArrowLeft,
@@ -12,6 +12,12 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { AuthScreenType, UserProfile } from '../../types';
+import {
+  auth,
+  googleProvider,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from '../../lib/firebase';
 
 interface AuthFlowModalProps {
   isOpen: boolean;
@@ -80,26 +86,30 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   }, [isOpen]);
 
   // Step 1 state (회원가입)
-  const [emailUser, setEmailUser] = useState('creator.vision');
+  const [emailUser, setEmailUser] = useState('');
   const [selectedDomain, setSelectedDomain] = useState('@gmail.com');
   const [allAgreed, setAllAgreed] = useState(false);
   const [terms, setTerms] = useState({
-    age: true,
-    service: true,
-    privacy: true,
+    age: false,
+    service: false,
+    privacy: false,
     marketing: false,
   });
 
-  // Step 2 state (OTP)
-  const [otp, setOtp] = useState(['8', '3', '7', '9', '1', '']);
-  const [timerSeconds, setTimerSeconds] = useState(225); // 03:45
+  // Step 2 state (OTP - 6자리 모두 비워진 빈칸으로 시작)
+  const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
+  const [timerSeconds, setTimerSeconds] = useState(300); // 05:00
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Step 4 state (Password)
-  const [nickname, setNickname] = useState('클립마스터');
-  const [password, setPassword] = useState('Clipsort2025!#');
-  const [passwordConfirm, setPasswordConfirm] = useState('Clipsort2025!#');
+  const [nickname, setNickname] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
+
+  // Find password state
+  const [findPwCode, setFindPwCode] = useState('');
 
   // Social states
   const [appleHideEmail, setAppleHideEmail] = useState(true);
@@ -108,6 +118,10 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     profile: true,
     alarm: false,
   });
+
+  // Auth submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Countdown timer for OTP
   useEffect(() => {
@@ -140,50 +154,64 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   };
 
   const handleCompleteEmailSignup = () => {
-    onLoginSuccess({
-      isLoggedIn: true,
-      nickname: nickname || '클립마스터',
-      email: fullEmail,
-      provider: 'email',
-    });
-    onClose();
+    alert('이메일 회원가입은 서버 측 이메일 발송 및 인증 기능이 추가될 때까지 비활성화되어 있습니다. Google 로그인을 이용해 주세요.');
   };
 
   const handleKakaoLogin = () => {
-    onLoginSuccess({
-      isLoggedIn: true,
-      nickname: '김클립',
-      email: 'clip_kim@kakao.com',
-      provider: 'kakao',
-    });
-    onClose();
+    alert('카카오 로그인은 연동 준비 중입니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.');
   };
 
-  const handleGoogleLogin = () => {
-    onLoginSuccess({
-      isLoggedIn: true,
-      nickname: 'Alex Kim',
-      email: 'creator.alex@gmail.com',
-      provider: 'google',
-    });
-    onClose();
+  const handleGoogleLogin = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+      onLoginSuccess({
+        isLoggedIn: true,
+        uid: fbUser.uid,
+        nickname: fbUser.displayName || fbUser.email?.split('@')[0] || '클립사용자',
+        email: fbUser.email || '',
+        avatarUrl: fbUser.photoURL || undefined,
+        provider: 'google',
+      });
+      onClose();
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      console.error('Google login error:', err);
+      let msg = 'Google 로그인에 실패했습니다. 다시 시도해 주세요.';
+      if (err.code === 'auth/popup-blocked') {
+        msg = '팝업 차단이 활성화되어 있습니다. 브라우저의 팝업 차단을 해제하고 다시 시도해 주세요.';
+      } else if (err.message) {
+        msg = `Google 로그인 오류: ${err.message}`;
+      }
+      setAuthError(msg);
+      alert(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAppleLogin = () => {
-    onLoginSuccess({
-      isLoggedIn: true,
-      nickname: '김클립',
-      email: appleHideEmail ? 'privaterelay@appleid.com' : 'alex.kim@icloud.com',
-      provider: 'apple',
-    });
-    onClose();
+    alert('Apple 로그인은 연동 준비 중입니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.');
   };
 
-  const handleDirectLogin = (e?: React.FormEvent) => {
+  const handleDirectLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const idToUse = loginTab === 'id' ? loginId.trim() : loginPhone.trim();
+    if (isSubmitting) return;
+    setAuthError(null);
+
+    if (loginTab === 'phone') {
+      alert('휴대폰 번호 로그인은 현재 지원 준비 중입니다. 이메일 로그인 또는 Google 로그인을 이용해 주세요.');
+      return;
+    }
+
+    const idToUse = loginId.trim();
     if (!idToUse) {
-      alert(loginTab === 'id' ? '아이디 또는 이메일을 입력해 주세요.' : '휴대폰 번호를 입력해 주세요.');
+      alert('아이디 또는 이메일을 입력해 주세요.');
       return;
     }
     if (!loginPassword) {
@@ -191,32 +219,58 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       return;
     }
 
+    const emailToUse = idToUse.includes('@') ? idToUse : `${idToUse}@clipsort.io`;
+
+    setIsSubmitting(true);
     try {
-      if (saveId) {
-        localStorage.setItem('clipsort_saved_id', idToUse);
-      } else {
-        localStorage.removeItem('clipsort_saved_id');
+      const result = await signInWithEmailAndPassword(auth, emailToUse, loginPassword);
+      const fbUser = result.user;
+
+      try {
+        if (saveId) {
+          localStorage.setItem('clipsort_saved_id', idToUse);
+        } else {
+          localStorage.removeItem('clipsort_saved_id');
+        }
+
+        if (autoLogin) {
+          localStorage.setItem('clipsort_auto_login', 'true');
+        } else {
+          localStorage.removeItem('clipsort_auto_login');
+        }
+      } catch {
+        // ignore
       }
 
-      if (autoLogin) {
-        localStorage.setItem('clipsort_auto_login', 'true');
-      } else {
-        localStorage.removeItem('clipsort_auto_login');
+      onLoginSuccess({
+        isLoggedIn: true,
+        uid: fbUser.uid,
+        nickname: fbUser.displayName || fbUser.email?.split('@')[0] || idToUse.split('@')[0] || '클립사용자',
+        email: fbUser.email || emailToUse,
+        provider: 'email',
+      });
+      onClose();
+    } catch (err: any) {
+      console.error('Email login error:', err);
+      let errorMsg = '로그인 중 오류가 발생했습니다.';
+      if (err.code === 'auth/user-not-found') {
+        errorMsg = '등록되지 않은 계정입니다. 이메일 주소를 확인하거나 Google 로그인을 이용해 주세요.';
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errorMsg = '이메일 또는 비밀번호가 올바르지 않습니다.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMsg = '유효한 이메일 형식을 입력해 주세요 (예: user@example.com).';
+      } else if (err.code === 'auth/too-many-requests') {
+        errorMsg = '로그인 시도가 너무 많아 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요.';
+      } else if (err.code === 'auth/user-disabled') {
+        errorMsg = '관리자에 의해 비활성화된 계정입니다.';
+      } else if (err.message) {
+        errorMsg = err.message;
       }
-    } catch {
-      // ignore
+      setAuthError(errorMsg);
+      alert(errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const email = idToUse.includes('@') ? idToUse : `${idToUse}@clipsort.io`;
-    const nickname = idToUse.includes('@') ? idToUse.split('@')[0] : idToUse;
-
-    onLoginSuccess({
-      isLoggedIn: true,
-      nickname: nickname || '클립마스터',
-      email,
-      provider: 'email',
-    });
-    onClose();
   };
 
   const handleFindIdSubmit = (e: React.FormEvent) => {
@@ -606,7 +660,9 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   </div>
                   <input
                     type="text"
-                    defaultValue="849201"
+                    value={findPwCode}
+                    onChange={(e) => setFindPwCode(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="인증번호 6자리 입력"
                     maxLength={6}
                     className="w-full px-3 py-2.5 rounded-lg bg-[#f2f3ff] border border-[#5046e5] text-center font-bold tracking-widest text-[#131b2e] text-lg focus:outline-none"
                   />
@@ -880,8 +936,24 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => setScreen('email_step2')}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all"
+                onClick={() => {
+                  if (!emailUser.trim()) {
+                    alert('이메일 주소를 입력해 주세요.');
+                    return;
+                  }
+                  if (!terms.age || !terms.service || !terms.privacy) {
+                    alert('필수 약관에 모두 동의해 주세요.');
+                    return;
+                  }
+                  // 6자리 모두 비워진 상태로 리셋
+                  setOtp(['', '', '', '', '', '']);
+                  setTimerSeconds(300);
+                  setScreen('email_step2');
+                  setTimeout(() => {
+                    otpInputRefs.current[0]?.focus();
+                  }, 100);
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
                 <span>인증번호 받기</span>
                 <ChevronRight className="w-4 h-4" />
@@ -909,7 +981,14 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div>
               {/* Header */}
               <div className="flex items-center justify-between pb-3">
-                <button onClick={() => setScreen('email_step1')} className="p-1 text-[#131b2e]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtp(['', '', '', '', '', '']);
+                    setScreen('email_step1');
+                  }}
+                  className="p-1 text-[#131b2e] hover:bg-[#eaedff] rounded-full transition-colors cursor-pointer"
+                >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <h2 className="text-base font-bold text-[#131b2e]">회원가입</h2>
@@ -932,26 +1011,63 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 <strong>{fullEmail}</strong> 으로 전송된 6자리 번호를 5분 이내에 입력해 주세요.
               </p>
               <button
-                onClick={() => setScreen('email_step1')}
-                className="text-xs text-[#5046e5] font-semibold underline mb-6"
+                type="button"
+                onClick={() => {
+                  setOtp(['', '', '', '', '', '']);
+                  setScreen('email_step1');
+                }}
+                className="text-xs text-[#5046e5] font-semibold underline mb-6 cursor-pointer"
               >
                 이메일 주소 변경 ✏️
               </button>
 
-              {/* 6 Digit Boxes */}
+              {/* 6 Digit Boxes (6자리 모두 빈칸으로 시작) */}
               <div className="grid grid-cols-6 gap-2 mb-4">
                 {otp.map((digit, idx) => (
                   <input
                     key={idx}
+                    ref={(el) => {
+                      otpInputRefs.current[idx] = el;
+                    }}
                     type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     maxLength={1}
                     value={digit}
-                    onChange={(e) => {
-                      const newOtp = [...otp];
-                      newOtp[idx] = e.target.value;
-                      setOtp(newOtp);
+                    onKeyDown={(e) => {
+                      if (e.key === 'Backspace' && !digit && idx > 0) {
+                        otpInputRefs.current[idx - 1]?.focus();
+                      }
                     }}
-                    className="w-full h-14 text-center text-xl font-bold bg-white border-2 border-[#5046e5] rounded-xl text-[#131b2e] focus:outline-none focus:ring-2 focus:ring-[#5046e5]/20"
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const pastedData = e.clipboardData.getData('text').trim();
+                      const numbersOnly = pastedData.replace(/[^0-9]/g, '');
+                      if (numbersOnly.length > 0) {
+                        const digits = numbersOnly.slice(0, 6).split('');
+                        const newOtp = ['', '', '', '', '', ''];
+                        digits.forEach((d, i) => {
+                          newOtp[i] = d;
+                        });
+                        setOtp(newOtp);
+                        const nextIndex = Math.min(digits.length, 5);
+                        otpInputRefs.current[nextIndex]?.focus();
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      const newOtp = [...otp];
+                      newOtp[idx] = val.slice(-1);
+                      setOtp(newOtp);
+                      if (val && idx < 5) {
+                        otpInputRefs.current[idx + 1]?.focus();
+                      }
+                    }}
+                    className={`w-full h-14 text-center text-xl font-bold bg-white border-2 rounded-xl text-[#131b2e] focus:outline-none transition-all ${
+                      digit
+                        ? 'border-[#5046e5] ring-2 ring-[#5046e5]/10'
+                        : 'border-[#dae2fd] focus:border-[#5046e5]'
+                    }`}
                   />
                 ))}
               </div>
@@ -965,8 +1081,15 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   인증번호가 오지 않나요?{' '}
                   <button
                     type="button"
-                    onClick={() => setTimerSeconds(300)}
-                    className="text-[#5046e5] font-bold underline"
+                    onClick={() => {
+                      setOtp(['', '', '', '', '', '']);
+                      setTimerSeconds(300);
+                      alert('인증번호가 재전송되었습니다.');
+                      setTimeout(() => {
+                        otpInputRefs.current[0]?.focus();
+                      }, 100);
+                    }}
+                    className="text-[#5046e5] font-bold underline cursor-pointer"
                   >
                     다시 보내기
                   </button>
@@ -984,8 +1107,15 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div className="pt-6">
               <button
                 type="button"
-                onClick={() => setScreen('email_step4')}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all"
+                onClick={() => {
+                  const enteredCode = otp.join('');
+                  if (enteredCode.length < 6) {
+                    alert('인증번호 6자리를 모두 입력해 주세요.');
+                    return;
+                  }
+                  alert('현재 6자리 이메일 인증번호 발송 및 검증 서버가 준비 중입니다. 실제 서버 연동 전까지는 임의 인증 완료가 제한되오니, 현재 활성화된 Google 로그인을 이용해 주세요.');
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
                 <span>다음</span>
                 <ChevronRight className="w-4 h-4" />
