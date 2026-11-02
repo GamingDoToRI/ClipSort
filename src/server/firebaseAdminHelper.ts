@@ -34,8 +34,9 @@ export function getFirebaseAdminApp(): {
     };
   }
 
-  const { projectId } = getFirebaseConfig();
+  const { projectId, firestoreDatabaseId } = getFirebaseConfig();
   const targetProjectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || projectId || 'clipsort-7adfb';
+  const targetDatabaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID || firestoreDatabaseId || '(default)';
 
   // 1. Raw JSON service account in env
   const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
@@ -62,7 +63,9 @@ export function getFirebaseAdminApp(): {
         }
 
         authInstance = getAuth(adminApp);
-        firestoreDb = getFirestore(adminApp);
+        firestoreDb = targetDatabaseId && targetDatabaseId !== '(default)'
+          ? getFirestore(adminApp, targetDatabaseId)
+          : getFirestore(adminApp);
 
         return {
           app: adminApp,
@@ -97,7 +100,9 @@ export function getFirebaseAdminApp(): {
       }
 
       authInstance = getAuth(adminApp);
-      firestoreDb = getFirestore(adminApp);
+      firestoreDb = targetDatabaseId && targetDatabaseId !== '(default)'
+        ? getFirestore(adminApp, targetDatabaseId)
+        : getFirestore(adminApp);
 
       return {
         app: adminApp,
@@ -131,7 +136,9 @@ export function getFirebaseAdminApp(): {
       }
 
       authInstance = getAuth(adminApp);
-      firestoreDb = getFirestore(adminApp);
+      firestoreDb = targetDatabaseId && targetDatabaseId !== '(default)'
+        ? getFirestore(adminApp, targetDatabaseId)
+        : getFirestore(adminApp);
 
       return {
         app: adminApp,

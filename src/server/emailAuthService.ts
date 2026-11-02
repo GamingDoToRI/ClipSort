@@ -126,7 +126,10 @@ async function deleteVerificationRecord(email: string): Promise<void> {
 /**
  * 1. Send OTP Verification Email via Resend
  */
-export async function sendOtpVerificationEmail(email: string): Promise<{
+export async function sendOtpVerificationEmail(
+  email: string,
+  purpose: 'signup' | 'reset_password' = 'signup'
+): Promise<{
   success: boolean;
   message: string;
   cooldownSeconds?: number;
@@ -137,15 +140,18 @@ export async function sendOtpVerificationEmail(email: string): Promise<{
     throw new Error('올바른 이메일 형식을 입력해 주세요.');
   }
 
-  // 1. Enforce RESEND_TEST_EMAIL restriction in test environment
+  // 1. Sender address and domain verification mode
+  // If RESEND_FROM_EMAIL is configured (e.g., 'ClipSort <noreply@clipsort.com>'), use it.
+  // When using a custom domain or production mode, all email restrictions are lifted.
+  const fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || 'ClipSort <onboarding@resend.dev>';
+  const isCustomDomain = !fromEmail.includes('@resend.dev');
   const testEmail = process.env.RESEND_TEST_EMAIL?.toLowerCase().trim();
-  if (!testEmail) {
-    throw new Error('서버 환경변수 RESEND_TEST_EMAIL이 설정되어 있지 않습니다.');
-  }
 
-  if (cleanEmail !== testEmail) {
+  // In Resend free test mode (using @resend.dev), Resend API strictly blocks sending to anyone other than the account owner with 403 Forbidden.
+  // Once a custom domain is verified in Resend and RESEND_FROM_EMAIL is set, this check is automatically bypassed!
+  if (!isCustomDomain && testEmail && cleanEmail !== testEmail) {
     throw new Error(
-      `현재 테스트 환경에서는 등록된 테스트 이메일(${testEmail})로만 인증번호 발송이 가능합니다.`
+      `현재 테스트 환경(onboarding@resend.dev)에서는 등록된 테스트 이메일(${testEmail})로만 인증번호 발송이 가능합니다. 실제 도메인 등록 후 RESEND_FROM_EMAIL 환경변수를 설정하시면 모든 사용자에게 발송됩니다.`
     );
   }
 
@@ -153,6 +159,18 @@ export async function sendOtpVerificationEmail(email: string): Promise<{
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
   if (!resendApiKey) {
     throw new Error('서버 환경변수 RESEND_API_KEY가 설정되어 있지 않습니다.');
+  }
+
+  // 2-1. If purpose is reset_password, verify if the user exists in Firebase Auth
+  const { auth: adminAuth, hasServiceAccount } = getFirebaseAdminApp();
+  if (purpose === 'reset_password' && hasServiceAccount && adminAuth) {
+    try {
+      await adminAuth.getUserByEmail(cleanEmail);
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        throw new Error('가입되지 않은 이메일 주소입니다. 이메일을 다시 확인해 주세요.');
+      }
+    }
   }
 
   // 3. Rate limiting and Cooldown check
@@ -186,10 +204,17 @@ export async function sendOtpVerificationEmail(email: string): Promise<{
 
   // 5. Build and send email via Resend
   const resend = new Resend(resendApiKey);
-  const subject = '[ClipSort] 회원가입 인증번호 안내';
+  const isReset = purpose === 'reset_password';
+  const subject = isReset ? '[ClipSort] 비밀번호 재설정 인증번호 안내' : '[ClipSort] 회원가입 인증번호 안내';
+  const badgeText = isReset ? '비밀번호 재설정' : '이메일 본인인증';
+  const headingText = isReset ? '비밀번호 재설정 인증번호가 도착했습니다.' : '이메일 인증번호가 도착했습니다.';
+  const subPromptText = isReset
+    ? 'ClipSort 비밀번호 재설정 화면에서 아래 6자리 인증번호를 입력해 주세요. (5분 이내)'
+    : 'ClipSort 회원가입 화면에서 아래 6자리 인증번호를 입력해 주세요. (5분 이내)';
+
   const textBody = `안녕하세요!
 
-ClipSort 회원가입을 위한 인증번호입니다:
+ClipSort ${isReset ? '비밀번호 재설정' : '회원가입'}을 위한 인증번호입니다:
 [ ${code} ]
 
 인증번호는 5분간 유효합니다.
@@ -211,7 +236,7 @@ ClipSort 회원가입을 위한 인증번호입니다:
               <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">ClipSort</h1>
             </td>
             <td align="right">
-              <span style="font-size: 11px; font-weight: 600; color: #c7d2fe; background-color: rgba(255, 255, 255, 0.15); padding: 4px 10px; border-radius: 9999px;">이메일 본인인증</span>
+              <span style="font-size: 11px; font-weight: 600; color: #c7d2fe; background-color: rgba(255, 255, 255, 0.15); padding: 4px 10px; border-radius: 9999px;">${badgeText}</span>
             </td>
           </tr>
         </table>
@@ -219,9 +244,9 @@ ClipSort 회원가입을 위한 인증번호입니다:
     </tr>
     <tr>
       <td style="padding: 32px 24px;">
-        <h2 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #0f172a; line-height: 1.4;">이메일 인증번호가 도착했습니다.</h2>
+        <h2 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #0f172a; line-height: 1.4;">${headingText}</h2>
         <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;">
-          ClipSort 회원가입 화면에서 아래 6자리 인증번호를 입력해 주세요. (5분 이내)
+          ${subPromptText}
         </p>
         
         <div style="background-color: #f1f5f9; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
@@ -248,7 +273,7 @@ ClipSort 회원가입을 위한 인증번호입니다:
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: 'ClipSort <onboarding@resend.dev>',
+    from: fromEmail,
     to: [cleanEmail],
     subject,
     text: textBody,
@@ -367,6 +392,7 @@ export async function completeEmailSignup(params: {
   password: string;
   nickname: string;
   approvalToken: string;
+  allowPasswordUpdate?: boolean;
 }): Promise<{
   success: boolean;
   message: string;
@@ -377,7 +403,7 @@ export async function completeEmailSignup(params: {
     emailVerified: boolean;
   };
 }> {
-  const { email, password, nickname, approvalToken } = params;
+  const { email, password, nickname, approvalToken, allowPasswordUpdate } = params;
   const cleanEmail = email.toLowerCase().trim();
 
   if (!cleanEmail || !password || !approvalToken) {
@@ -414,38 +440,69 @@ export async function completeEmailSignup(params: {
   };
 
   if (hasServiceAccount && adminAuth) {
-    // Check if user already exists
+    // Check if user already exists in Firebase Auth
+    let existingUser = null;
     try {
-      const existingUser = await adminAuth.getUserByEmail(cleanEmail);
-      if (existingUser) {
-        throw new Error('이미 등록된 이메일 계정입니다. 로그인 화면으로 이동해 로그인해 주세요.');
-      }
+      existingUser = await adminAuth.getUserByEmail(cleanEmail);
     } catch (err: any) {
       if (err.code !== 'auth/user-not-found') {
         throw err;
       }
     }
 
-    // Create user via Firebase Admin SDK with emailVerified: true
-    try {
-      const newUser = await adminAuth.createUser({
-        email: cleanEmail,
-        password: password,
-        displayName: nickname?.trim() || cleanEmail.split('@')[0],
-        emailVerified: true,
-      });
+    if (existingUser) {
+      // Check providers for this existing user
+      const providerIds = existingUser.providerData.map((p) => p.providerId);
+      const hasPasswordProvider = providerIds.includes('password');
 
-      createdUserRecord = {
-        uid: newUser.uid,
-        email: newUser.email || cleanEmail,
-        displayName: newUser.displayName || cleanEmail.split('@')[0],
-        emailVerified: newUser.emailVerified,
-      };
-    } catch (err: any) {
-      if (err.code === 'auth/email-already-exists') {
-        throw new Error('이미 등록된 이메일 계정입니다. 로그인 화면으로 이동해 주세요.');
+      if (hasPasswordProvider && !allowPasswordUpdate) {
+        // Already registered with email and password
+        const err: any = new Error('이미 등록된 이메일 계정입니다. 로그인 화면으로 이동해 로그인해 주세요.');
+        err.code = 'EMAIL_ALREADY_EXISTS';
+        throw err;
       }
-      throw new Error(err.message || 'Firebase 계정 생성 중 오류가 발생했습니다.');
+
+      // If user registered via Google Auth before, or allowPasswordUpdate is requested (verified with OTP):
+      try {
+        const updatedUser = await adminAuth.updateUser(existingUser.uid, {
+          password: password,
+          displayName: nickname?.trim() || existingUser.displayName || cleanEmail.split('@')[0],
+          emailVerified: true,
+        });
+
+        createdUserRecord = {
+          uid: updatedUser.uid,
+          email: updatedUser.email || cleanEmail,
+          displayName: updatedUser.displayName || cleanEmail.split('@')[0],
+          emailVerified: updatedUser.emailVerified,
+        };
+      } catch (updateErr: any) {
+        throw new Error(updateErr.message || '기존 계정에 비밀번호를 설정하는 중 오류가 발생했습니다.');
+      }
+    } else {
+      // Create fresh user via Firebase Admin SDK with emailVerified: true
+      try {
+        const newUser = await adminAuth.createUser({
+          email: cleanEmail,
+          password: password,
+          displayName: nickname?.trim() || cleanEmail.split('@')[0],
+          emailVerified: true,
+        });
+
+        createdUserRecord = {
+          uid: newUser.uid,
+          email: newUser.email || cleanEmail,
+          displayName: newUser.displayName || cleanEmail.split('@')[0],
+          emailVerified: newUser.emailVerified,
+        };
+      } catch (err: any) {
+        if (err.code === 'auth/email-already-exists') {
+          const dupErr: any = new Error('이미 등록된 이메일 계정입니다. 로그인 화면으로 이동해 로그인해 주세요.');
+          dupErr.code = 'EMAIL_ALREADY_EXISTS';
+          throw dupErr;
+        }
+        throw new Error(err.message || 'Firebase 계정 생성 중 오류가 발생했습니다.');
+      }
     }
   } else {
     // Fallback: If Firebase Admin Service Account credentials are not yet configured in env,

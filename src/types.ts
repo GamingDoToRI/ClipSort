@@ -59,8 +59,5 @@ export type AuthScreenType =
   | 'email_direct_login'
   | 'find_id'
   | 'find_password'
-  | 'reset_password_step'
-  | 'kakao_login'
-  | 'google_select'
-  | 'google_consent'
-  | 'apple_login';
+  | 'reset_password_step';
+

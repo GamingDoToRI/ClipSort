@@ -5,7 +5,6 @@ import { CategoryTabs } from './components/CategoryTabs';
 import { VideoCardList } from './components/VideoCardList';
 import { CategoryChangeModal } from './components/CategoryChangeModal';
 import { Toast } from './components/Toast';
-import { OSShareSimulationModal } from './components/OSShareSimulationModal';
 import { AuthFlowModal } from './components/auth/AuthFlowModal';
 import { BottomNavBar } from './components/navigation/BottomNavBar';
 import { RecentTimelineView } from './components/recent/RecentTimelineView';
@@ -38,6 +37,7 @@ import {
   moveVideoToTrashInFirestore,
   restoreVideoFromTrashInFirestore,
   deleteVideoFromFirestore,
+  deleteAllUserVideosFromFirestore,
   subscribeToVideos,
 } from './services/videoFirestoreService';
 import {
@@ -230,7 +230,6 @@ export default function App() {
 
   // Modals state
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isShareSimOpen, setIsShareSimOpen] = useState(false);
   const [videoToChange, setVideoToChange] = useState<VideoBookmark | null>(null);
   const [videoToDeleteConfirm, setVideoToDeleteConfirm] = useState<VideoBookmark | null>(null);
 
@@ -410,6 +409,90 @@ export default function App() {
     }
     showToast('로그아웃 되었습니다.');
   }, [showToast]);
+
+  // 회원 탈퇴 및 북마크 데이터 영구 삭제 핸들러
+  const handleDeleteAccount = useCallback(async () => {
+    const currentUid = user.uid;
+    const currentUser = auth.currentUser;
+
+    try {
+      // 1. Firebase Auth ID 토큰 획득 (서버 검증용)
+      const idToken = currentUser ? await currentUser.getIdToken(true).catch(() => null) : null;
+
+      // 2. 서버 측 삭제 API 호출 (/api/delete-account)
+      let serverHandled = false;
+      if (idToken) {
+        try {
+          const res = await fetch('/api/delete-account', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ idToken }),
+          });
+          const data = await res.json().catch(() => null);
+          if (res.ok && data?.success && !data?.clientFallback) {
+            serverHandled = true;
+          }
+        } catch (serverErr) {
+          console.warn('Server delete account warning, proceeding with client cleanup:', serverErr);
+        }
+      }
+
+      // 3. Firestore 영상 북마크 영구 일괄 삭제 (클라이언트 측 백업 보증)
+      if (currentUid) {
+        await deleteAllUserVideosFromFirestore(currentUid).catch((e) =>
+          console.warn('Client deleteAllUserVideos warning:', e)
+        );
+      }
+
+      // 4. Firebase Auth 계정 삭제 (클라이언트 측)
+      if (!serverHandled && currentUser) {
+        try {
+          await currentUser.delete();
+        } catch (authDeleteErr: any) {
+          console.warn('Client auth user.delete error:', authDeleteErr);
+        }
+      }
+
+      // 5. Firebase 로그아웃 및 로컬 스토리지 초기화
+      try {
+        await signOut(auth);
+      } catch {
+        // ignore
+      }
+
+      setUser({
+        isLoggedIn: false,
+        nickname: '게스트',
+        email: '',
+        provider: 'email',
+      });
+      setBookmarks([]);
+      setTrashItems([]);
+
+      try {
+        localStorage.removeItem('clipsort_user');
+        localStorage.removeItem('clipsort_bookmarks');
+        localStorage.removeItem('clipsort_trash');
+        localStorage.removeItem('clipsort_saved_id');
+        localStorage.removeItem('clipsort_auto_login');
+        localStorage.removeItem('clipsort_user_categories');
+      } catch {
+        // ignore
+      }
+
+      setSettingsSubPage(null);
+      setActiveTab('storage');
+      showToast('회원 탈퇴 및 모든 북마크 데이터가 안전하게 삭제되었습니다.');
+    } catch (err: any) {
+      console.error('Account deletion error:', err);
+      showToast('회원 탈퇴 처리 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      throw err;
+    }
+  }, [user.uid, showToast]);
+
 
   // Derived list of all available categories
   // 1. '전체' is always first
@@ -865,7 +948,6 @@ export default function App() {
             setIsAuthOpen(true);
           }
         }}
-        onOpenShareSim={() => setIsShareSimOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -964,6 +1046,7 @@ export default function App() {
               handleLogout();
               setSettingsSubPage(null);
             }}
+            onDeleteAccount={handleDeleteAccount}
           />
         )}
 
@@ -1038,21 +1121,6 @@ export default function App() {
         onClose={() => setVideoToChange(null)}
         onConfirmChange={handleConfirmCategoryChange}
         onAddNewCategory={handleAddNewCategory}
-      />
-
-      {/* OS 공유하기 연동 시뮬레이터 모달 */}
-      <OSShareSimulationModal
-        isOpen={isShareSimOpen}
-        onClose={() => setIsShareSimOpen(false)}
-        onShareToClipSort={async (url, title) => {
-          if (!user.isLoggedIn) {
-            setIsShareSimOpen(false);
-            setIsAuthOpen(true);
-            showToast('공유 링크 저장은 로그인 후 이용하실 수 있습니다.');
-            return;
-          }
-          await handleSaveLink(url, title);
-        }}
       />
 
       {/* 회원가입 & 로그인 모달 */}

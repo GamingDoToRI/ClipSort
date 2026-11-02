@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile } from '../../types';
 import { AvatarCropModal } from './AvatarCropModal';
-import { LogIn, User } from 'lucide-react';
+import { LogIn, User, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface MyInfoSubViewProps {
   user: UserProfile;
@@ -13,6 +13,7 @@ interface MyInfoSubViewProps {
   onNavigateChangePassword: () => void;
   onOpenAuth?: () => void;
   onLogout: () => void;
+  onDeleteAccount?: () => Promise<void>;
 }
 
 export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
@@ -25,10 +26,14 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
   onNavigateChangePassword,
   onOpenAuth,
   onLogout,
+  onDeleteAccount,
 }) => {
   const [isEditingNick, setIsEditingNick] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(user.nickname);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [confirmDeleteCheck, setConfirmDeleteCheck] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +54,19 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
     setShowLogoutModal(false);
     onLogout();
     onShowToast('로그아웃 되었습니다.');
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!onDeleteAccount || isDeletingAccount) return;
+    setIsDeletingAccount(true);
+    try {
+      await onDeleteAccount();
+      setShowDeleteModal(false);
+    } catch (err) {
+      console.error('Delete account failed:', err);
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,6 +279,25 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
                   chevron_right
                 </span>
               </div>
+
+              {/* 회원 탈퇴 */}
+              <div
+                onClick={() => {
+                  setConfirmDeleteCheck(false);
+                  setShowDeleteModal(true);
+                }}
+                className="flex items-center justify-between p-3.5 hover:bg-rose-50/70 transition-colors group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600 transition-colors">
+                    <span className="material-symbols-outlined text-[19px]">person_remove</span>
+                  </div>
+                  <span className="text-sm font-medium text-rose-600">회원 탈퇴</span>
+                </div>
+                <span className="material-symbols-outlined text-rose-300 text-[20px]">
+                  chevron_right
+                </span>
+              </div>
             </div>
           </section>
         ) : (
@@ -373,6 +410,80 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
                 className="w-full py-3 rounded-xl bg-[#ba1a1a] text-white font-semibold text-xs hover:bg-[#93000a] transition-colors active:scale-[0.98] shadow-sm cursor-pointer"
               >
                 로그아웃
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 회원 탈퇴 확인 팝업 모달 */}
+      {showDeleteModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => !isDeletingAccount && setShowDeleteModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm mx-auto text-center w-full border border-rose-100 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-2xl p-3 mx-auto mb-3.5 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200/60 shadow-xs">
+              <AlertTriangle className="w-7 h-7 text-rose-600" />
+            </div>
+            <h2 className="font-bold text-lg text-[#131b2e] mb-1.5 tracking-tight">
+              정말 회원 탈퇴하시겠습니까?
+            </h2>
+            <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-100 text-left my-4 space-y-2">
+              <p className="text-xs font-semibold text-rose-800 leading-snug">
+                ⚠️ 탈퇴 시 다음 데이터가 영구적으로 삭제됩니다:
+              </p>
+              <ul className="text-[11px] text-rose-700 space-y-1 list-disc list-inside">
+                <li>클라우드에 저장된 모든 영상 북마크 데이터</li>
+                <li>사용자 생성 커스텀 카테고리 및 분류 설정</li>
+                <li>휴지통 임시 보관 데이터 및 계정 프로필</li>
+              </ul>
+              <p className="text-[11px] text-rose-600/90 font-medium pt-1">
+                ※ 삭제된 데이터는 어떤 경우에도 복구할 수 없습니다.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-2.5 text-left cursor-pointer mb-5 p-2 rounded-xl hover:bg-neutral-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={confirmDeleteCheck}
+                onChange={(e) => setConfirmDeleteCheck(e.target.checked)}
+                disabled={isDeletingAccount}
+                className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 mt-0.5 accent-rose-600 cursor-pointer"
+              />
+              <span className="text-xs text-[#464555] font-medium leading-tight">
+                위 주의사항을 모두 확인하였으며, 모든 데이터의 영구 삭제 및 회원 탈퇴에 동의합니다.
+              </span>
+            </label>
+
+            <div className="flex items-center space-x-2 w-full">
+              <button
+                type="button"
+                disabled={isDeletingAccount}
+                onClick={() => setShowDeleteModal(false)}
+                className="w-full py-3.5 rounded-xl bg-[#f2f3ff] text-[#131b2e] font-semibold text-xs hover:bg-[#eaedff] transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={!confirmDeleteCheck || isDeletingAccount}
+                onClick={handleConfirmDeleteAccount}
+                className="w-full py-3.5 rounded-xl bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-colors active:scale-[0.98] shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+              >
+                {isDeletingAccount ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>데이터 삭제 중...</span>
+                  </>
+                ) : (
+                  <span>탈퇴 및 데이터 삭제</span>
+                )}
               </button>
             </div>
           </div>

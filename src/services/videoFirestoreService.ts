@@ -7,6 +7,8 @@ import {
   onSnapshot,
   query,
   where,
+  getDocs,
+  writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -181,3 +183,29 @@ export function subscribeToVideos(
     }
   );
 }
+
+/**
+ * Permanently delete all video bookmarks belonging to a user from Firestore (used for account withdrawal)
+ */
+export async function deleteAllUserVideosFromFirestore(userId: string): Promise<number> {
+  if (!userId) return 0;
+  try {
+    const q = query(
+      collection(db, VIDEOS_COLLECTION),
+      where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return 0;
+
+    const batch = writeBatch(db);
+    snapshot.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    return snapshot.size;
+  } catch (error) {
+    console.error('Error deleting user videos from Firestore:', error);
+    throw error;
+  }
+}
+

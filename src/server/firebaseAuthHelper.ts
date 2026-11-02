@@ -3,14 +3,23 @@ import path from 'path';
 
 let cachedFirebaseApiKey: string | null = null;
 let cachedFirebaseProjectId: string | null = null;
+let cachedFirebaseDatabaseId: string | null = null;
 
 /**
- * Retrieve Firebase web API key and project ID from environment variables
+ * Retrieve Firebase web API key, project ID, and firestoreDatabaseId from environment variables
  * or local firebase-applet-config.json file.
  */
-export function getFirebaseConfig(): { apiKey: string; projectId: string } {
-  if (cachedFirebaseApiKey && cachedFirebaseProjectId) {
-    return { apiKey: cachedFirebaseApiKey, projectId: cachedFirebaseProjectId };
+export function getFirebaseConfig(): {
+  apiKey: string;
+  projectId: string;
+  firestoreDatabaseId: string;
+} {
+  if (cachedFirebaseApiKey && cachedFirebaseProjectId && cachedFirebaseDatabaseId !== null) {
+    return {
+      apiKey: cachedFirebaseApiKey,
+      projectId: cachedFirebaseProjectId,
+      firestoreDatabaseId: cachedFirebaseDatabaseId,
+    };
   }
 
   let apiKey =
@@ -21,8 +30,12 @@ export function getFirebaseConfig(): { apiKey: string; projectId: string } {
     process.env.FIREBASE_PROJECT_ID ||
     process.env.VITE_FIREBASE_PROJECT_ID ||
     '';
+  let databaseId =
+    process.env.FIREBASE_DATABASE_ID ||
+    process.env.VITE_FIREBASE_DATABASE_ID ||
+    '';
 
-  if (!apiKey || !projectId) {
+  if (!apiKey || !projectId || !databaseId) {
     try {
       const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
       if (fs.existsSync(configPath)) {
@@ -30,6 +43,7 @@ export function getFirebaseConfig(): { apiKey: string; projectId: string } {
         const parsed = JSON.parse(raw);
         if (!apiKey && parsed.apiKey) apiKey = parsed.apiKey;
         if (!projectId && parsed.projectId) projectId = parsed.projectId;
+        if (!databaseId && parsed.firestoreDatabaseId) databaseId = parsed.firestoreDatabaseId;
       }
     } catch {
       // Configuration file not found or inaccessible
@@ -38,8 +52,13 @@ export function getFirebaseConfig(): { apiKey: string; projectId: string } {
 
   cachedFirebaseApiKey = apiKey;
   cachedFirebaseProjectId = projectId;
+  cachedFirebaseDatabaseId = databaseId || '(default)';
 
-  return { apiKey: cachedFirebaseApiKey, projectId: cachedFirebaseProjectId };
+  return {
+    apiKey: cachedFirebaseApiKey,
+    projectId: cachedFirebaseProjectId,
+    firestoreDatabaseId: cachedFirebaseDatabaseId,
+  };
 }
 
 export interface VerifiedFirebaseUser {

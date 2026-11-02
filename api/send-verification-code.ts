@@ -10,7 +10,7 @@ export async function handleSendVerificationCode(req: any, res: any) {
   }
 
   try {
-    const { email } = req.body || {};
+    const { email, purpose } = req.body || {};
     if (!email || typeof email !== 'string') {
       return res.status(400).json({
         success: false,
@@ -18,10 +18,10 @@ export async function handleSendVerificationCode(req: any, res: any) {
       });
     }
 
-    const result = await sendOtpVerificationEmail(email);
+    const result = await sendOtpVerificationEmail(email, purpose);
     return res.status(result.success ? 200 : 429).json(result);
   } catch (error: any) {
-    console.error('[Send Code API Error]:', error.message);
+    console.warn('[Send Code Notice]:', error.message);
     return res.status(400).json({
       success: false,
       error: error.message || '인증번호 발송 처리 중 오류가 발생했습니다.',

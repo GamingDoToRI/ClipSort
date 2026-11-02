@@ -10,6 +10,7 @@ import {
   RotateCw,
   MoreVertical,
   CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { AuthScreenType, UserProfile } from '../../types';
 import {
@@ -113,21 +114,39 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   // Find password state
+  const [findPwEmail, setFindPwEmail] = useState('');
   const [findPwCode, setFindPwCode] = useState('');
-
-  // Social states
-  const [appleHideEmail, setAppleHideEmail] = useState(true);
-  const [kakaoTerms, setKakaoTerms] = useState({
-    email: true,
-    profile: true,
-    alarm: false,
-  });
+  const [findPwTimer, setFindPwTimer] = useState(300);
+  const [findPwCodeSent, setFindPwCodeSent] = useState(false);
+  const [isSendingFindPwCode, setIsSendingFindPwCode] = useState(false);
+  const [isVerifyingFindPwCode, setIsVerifyingFindPwCode] = useState(false);
+  const [findPwError, setFindPwError] = useState<string | null>(null);
+  const [findPwSuccessMsg, setFindPwSuccessMsg] = useState<string | null>(null);
+  const [resetPwApprovalToken, setResetPwApprovalToken] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
+  const [isSubmittingReset, setIsSubmittingReset] = useState(false);
+  const [resetPwError, setResetPwError] = useState<string | null>(null);
 
   // Auth submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [isExistingAccount, setIsExistingAccount] = useState(false);
 
-  // Countdown timer for OTP
+  // Clear errors when transitioning between screens
+  useEffect(() => {
+    setLoginError(null);
+    setSignupError(null);
+    setVerificationError(null);
+    setIsExistingAccount(false);
+    setFindPwError(null);
+    setResetPwError(null);
+  }, [screen]);
+
+  // Countdown timer for signup OTP
   useEffect(() => {
     if (screen !== 'email_step2') return;
     const interval = setInterval(() => {
@@ -136,9 +155,104 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     return () => clearInterval(interval);
   }, [screen]);
 
+  // Countdown timer for password reset OTP
+  useEffect(() => {
+    if (screen !== 'find_password' || !findPwCodeSent) return;
+    const interval = setInterval(() => {
+      setFindPwTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [screen, findPwCodeSent]);
+
   if (!isOpen) return null;
 
   const fullEmail = (emailUser.includes('@') ? emailUser : `${emailUser}${selectedDomain}`).toLowerCase().trim();
+
+  // Password strength evaluation:
+  // - Before typing or when requirements are unmet: null or incomplete
+  // - Once 8~16 chars AND letters + numbers + special chars are met:
+  //     1. '안전한 강도' (기본 안전)
+  //     2. '높은 안전함' (대소문자 혼합 또는 10자 이상)
+  //     3. '매우 안전함' (대소문자 + 숫자 + 특수문자 2개 이상 또는 12자 이상)
+  const evaluatePasswordStrength = (pw: string): {
+    tier: 'none' | 'insufficient' | 'safe' | 'strong' | 'very_strong';
+    label: string;
+    textColor: string;
+    bgColor: string;
+    barWidth: string;
+    description: string;
+  } => {
+    if (!pw || pw.length === 0) {
+      return {
+        tier: 'none',
+        label: '',
+        textColor: 'text-[#777587]',
+        bgColor: 'bg-[#dae2fd]',
+        barWidth: '0%',
+        description: '영문, 숫자, 특수문자를 조합하여 8자 이상 입력해 주세요.',
+      };
+    }
+
+    const isLengthValid = pw.length >= 8 && pw.length <= 16;
+    const hasLower = /[a-z]/.test(pw);
+    const hasUpper = /[A-Z]/.test(pw);
+    const hasNumbers = /[0-9]/.test(pw);
+    const hasSpecial = /[^a-zA-Z0-9]/.test(pw);
+    const isBasicComplex = (hasLower || hasUpper) && hasNumbers && hasSpecial;
+
+    // Both mandatory conditions must be satisfied before entering "Safe" tiers
+    if (!isLengthValid || !isBasicComplex) {
+      return {
+        tier: 'insufficient',
+        label: '조건 미충족',
+        textColor: 'text-[#ba1a1a]',
+        bgColor: 'bg-[#ffdad6]',
+        barWidth: '25%',
+        description: '8~16자리 및 영문/숫자/특수문자 필수 조건을 충족해 주세요.',
+      };
+    }
+
+    // Mandatory conditions are met. Now evaluate advanced strength (3 tiers):
+    const specialCount = (pw.match(/[^a-zA-Z0-9]/g) || []).length;
+    const hasMixedCase = hasLower && hasUpper;
+
+    // Tier 3: '매우 안전함' (Very Strong)
+    // Criteria: (12자리 이상 + 대소문자 혼합) OR (10자리 이상 + 대소문자 혼합 + 특수문자 2개 이상)
+    if ((pw.length >= 12 && hasMixedCase) || (pw.length >= 10 && hasMixedCase && specialCount >= 2)) {
+      return {
+        tier: 'very_strong',
+        label: '매우 안전함',
+        textColor: 'text-[#00687a]',
+        bgColor: 'bg-[#00687a]/15 text-[#00687a]',
+        barWidth: '100%',
+        description: '매우 강력한 비밀번호입니다. 계정이 최고 수준으로 보호됩니다.',
+      };
+    }
+
+    // Tier 2: '높은 안전함' (Strong)
+    // Criteria: (대소문자 혼합) OR (10자리 이상) OR (특수문자 2개 이상)
+    if (hasMixedCase || pw.length >= 10 || specialCount >= 2) {
+      return {
+        tier: 'strong',
+        label: '높은 안전함',
+        textColor: 'text-[#008850]',
+        bgColor: 'bg-[#008850]/15 text-[#008850]',
+        barWidth: '75%',
+        description: '안전하고 신뢰할 수 있는 강도의 비밀번호입니다.',
+      };
+    }
+
+    // Tier 1: '안전한 강도' (Safe)
+    // Criteria: 8~16자리 및 영문/숫자/특수문자 기본 필수 조건 충족
+    return {
+      tier: 'safe',
+      label: '안전한 강도',
+      textColor: 'text-[#5046e5]',
+      bgColor: 'bg-[#eaedff] text-[#5046e5]',
+      barWidth: '50%',
+      description: '기본 보안 기준을 충족한 안전한 비밀번호입니다.',
+    };
+  };
 
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -254,30 +368,30 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   };
 
   // API 3: Complete Signup & Sign In directly with Firebase Auth
-  const handleCompleteEmailSignup = async () => {
+  const handleCompleteEmailSignup = async (allowUpdate: boolean = false) => {
     if (!approvalToken) {
-      alert('이메일 인증이 완료되지 않았습니다. 인증번호를 먼저 확인해 주세요.');
+      setSignupError('이메일 인증이 완료되지 않았습니다. 인증번호를 먼저 확인해 주세요.');
       setScreen('email_step2');
       return;
     }
 
     if (!password) {
-      alert('비밀번호를 입력해 주세요.');
+      setSignupError('비밀번호를 입력해 주세요.');
       return;
     }
 
     if (password.length < 8) {
-      alert('비밀번호는 최소 8자리 이상이어야 합니다.');
+      setSignupError('비밀번호는 최소 8자리 이상이어야 합니다.');
       return;
     }
 
     if (password !== passwordConfirm) {
-      alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      setSignupError('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
       return;
     }
 
     setIsSubmitting(true);
-    setAuthError(null);
+    setSignupError(null);
 
     try {
       const response = await fetch('/api/complete-signup', {
@@ -288,6 +402,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
           password,
           nickname: nickname.trim() || fullEmail.split('@')[0],
           approvalToken,
+          allowPasswordUpdate: Boolean(allowUpdate),
         }),
       });
 
@@ -295,8 +410,11 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
       if (!response.ok || !data?.success) {
         const errorMsg = data?.error || '회원가입 처리에 실패했습니다.';
-        setAuthError(errorMsg);
-        alert(errorMsg);
+        setSignupError(errorMsg);
+
+        if (data?.code === 'EMAIL_ALREADY_EXISTS' || errorMsg.includes('이미 등록된')) {
+          setIsExistingAccount(true);
+        }
         return;
       }
 
@@ -312,32 +430,186 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
           email: fbUser.email || fullEmail,
           provider: 'email',
         });
-        alert('회원가입과 로그인이 성공적으로 완료되었습니다! 환영합니다.');
         onClose();
       } catch (loginErr: any) {
         console.warn('Auto sign-in after creation notice:', loginErr);
         // Pre-fill email in direct login screen so user can log in with one click
         setLoginId(fullEmail);
         setScreen('email_direct_login');
-        alert('회원가입이 완료되었습니다! 생성된 계정 정보로 로그인해 주세요.');
+        setTimeout(() => {
+          setLoginError(`가입이 완료되었습니다. 비밀번호를 입력하여 로그인해 주세요.`);
+        }, 50);
       }
     } catch (err: any) {
       const netMsg = err.message || '회원가입 처리 중 네트워크 오류가 발생했습니다.';
-      setAuthError(netMsg);
-      alert(netMsg);
+      setSignupError(netMsg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleKakaoLogin = () => {
-    alert('카카오 로그인은 연동 준비 중입니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.');
+  // Find Password 1: Send OTP to email
+  const handleSendFindPwCode = async () => {
+    const cleanEmail = findPwEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setFindPwError('올바른 이메일 주소를 입력해 주세요.');
+      return;
+    }
+
+    setIsSendingFindPwCode(true);
+    setFindPwError(null);
+    setFindPwSuccessMsg(null);
+
+    try {
+      const response = await fetch('/api/send-verification-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, purpose: 'reset_password' }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        setFindPwError(data?.error || data?.message || '인증번호 발송에 실패했습니다.');
+        return;
+      }
+
+      setFindPwCodeSent(true);
+      setFindPwTimer(300);
+      setFindPwSuccessMsg('인증번호 6자리가 이메일로 발송되었습니다. (5분 이내 입력)');
+    } catch (err: any) {
+      setFindPwError(err.message || '인증번호 발송 중 네트워크 오류가 발생했습니다.');
+    } finally {
+      setIsSendingFindPwCode(false);
+    }
+  };
+
+  // Find Password 2: Verify 6-digit OTP
+  const handleVerifyFindPwCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanEmail = findPwEmail.trim().toLowerCase();
+    const cleanCode = findPwCode.trim();
+
+    if (!cleanEmail) {
+      setFindPwError('이메일 주소를 입력해 주세요.');
+      return;
+    }
+
+    if (!findPwCodeSent) {
+      setFindPwError('먼저 [인증번호 받기] 버튼을 눌러주세요.');
+      return;
+    }
+
+    if (cleanCode.length !== 6) {
+      setFindPwError('6자리 인증번호를 정확히 입력해 주세요.');
+      return;
+    }
+
+    setIsVerifyingFindPwCode(true);
+    setFindPwError(null);
+
+    try {
+      const response = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, code: cleanCode }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        setFindPwError(data?.message || data?.error || '인증번호가 일치하지 않습니다.');
+        return;
+      }
+
+      setResetPwApprovalToken(data.approvalToken);
+      setNewPassword('');
+      setNewPasswordConfirm('');
+      setResetPwError(null);
+      setScreen('reset_password_step');
+    } catch (err: any) {
+      setFindPwError(err.message || '인증번호 검증 중 오류가 발생했습니다.');
+    } finally {
+      setIsVerifyingFindPwCode(false);
+    }
+  };
+
+  // Find Password 3: Complete Password Reset
+  const handleCompletePasswordReset = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanEmail = findPwEmail.trim().toLowerCase();
+
+    if (!resetPwApprovalToken) {
+      setResetPwError('이메일 인증이 완료되지 않았습니다. 인증번호를 다시 확인해 주세요.');
+      setScreen('find_password');
+      return;
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      setResetPwError('비밀번호는 최소 8자리 이상이어야 합니다.');
+      return;
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      setResetPwError('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+
+    setIsSubmittingReset(true);
+    setResetPwError(null);
+
+    try {
+      const response = await fetch('/api/complete-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: newPassword,
+          nickname: '',
+          approvalToken: resetPwApprovalToken,
+          allowPasswordUpdate: true,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        setResetPwError(data?.error || '비밀번호 재설정 처리에 실패했습니다.');
+        return;
+      }
+
+      // Automatically sign in with newly set password
+      try {
+        const loginRes = await signInWithEmailAndPassword(auth, cleanEmail, newPassword);
+        const fbUser = loginRes.user;
+
+        onLoginSuccess({
+          isLoggedIn: true,
+          uid: fbUser.uid,
+          nickname: fbUser.displayName || cleanEmail.split('@')[0],
+          email: fbUser.email || cleanEmail,
+          provider: 'email',
+        });
+        onClose();
+      } catch (loginErr) {
+        console.warn('Auto sign-in after password reset notice:', loginErr);
+        setLoginId(cleanEmail);
+        setScreen('email_direct_login');
+        setTimeout(() => {
+          setLoginError('비밀번호가 성공적으로 변경되었습니다! 새 비밀번호로 로그인해 주세요.');
+        }, 50);
+      }
+    } catch (err: any) {
+      setResetPwError(err.message || '비밀번호 재설정 중 네트워크 오류가 발생했습니다.');
+    } finally {
+      setIsSubmittingReset(false);
+    }
   };
 
   const handleGoogleLogin = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
-    setAuthError(null);
+    setLoginError(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
@@ -361,34 +633,29 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       } else if (err.message) {
         msg = `Google 로그인 오류: ${err.message}`;
       }
-      setAuthError(msg);
-      alert(msg);
+      setLoginError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleAppleLogin = () => {
-    alert('Apple 로그인은 연동 준비 중입니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.');
-  };
-
   const handleDirectLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isSubmitting) return;
-    setAuthError(null);
+    setLoginError(null);
 
     if (loginTab === 'phone') {
-      alert('휴대폰 번호 로그인은 현재 지원 준비 중입니다. 이메일 로그인 또는 Google 로그인을 이용해 주세요.');
+      setLoginError('휴대폰 번호 로그인은 현재 지원 준비 중입니다. 이메일 로그인 또는 Google 로그인을 이용해 주세요.');
       return;
     }
 
     const idToUse = loginId.trim();
     if (!idToUse) {
-      alert('아이디 또는 이메일을 입력해 주세요.');
+      setLoginError('아이디 또는 이메일을 입력해 주세요.');
       return;
     }
     if (!loginPassword) {
-      alert('비밀번호를 입력해 주세요.');
+      setLoginError('비밀번호를 입력해 주세요.');
       return;
     }
 
@@ -424,23 +691,22 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      console.error('Email login error:', err);
-      let errorMsg = '로그인 중 오류가 발생했습니다.';
+      console.warn('Email login error details:', err.code, err.message);
+      let errorMsg = '이메일 또는 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.';
       if (err.code === 'auth/user-not-found') {
-        errorMsg = '등록되지 않은 계정입니다. 이메일 주소를 확인하거나 Google 로그인을 이용해 주세요.';
+        errorMsg = '등록되지 않은 계정입니다. 이메일 주소를 확인하거나 아래 Google 로그인을 이용해 주세요.';
       } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        errorMsg = '이메일 또는 비밀번호가 올바르지 않습니다.';
+        errorMsg = '이메일 또는 비밀번호가 일치하지 않습니다. 비밀번호를 다시 확인해 주세요.';
       } else if (err.code === 'auth/invalid-email') {
         errorMsg = '유효한 이메일 형식을 입력해 주세요 (예: user@example.com).';
       } else if (err.code === 'auth/too-many-requests') {
-        errorMsg = '로그인 시도가 너무 많아 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요.';
+        errorMsg = '로그인 시도가 많아 일시적으로 차단되었습니다. 잠시 후 다시 시도해 주세요.';
       } else if (err.code === 'auth/user-disabled') {
         errorMsg = '관리자에 의해 비활성화된 계정입니다.';
-      } else if (err.message) {
+      } else if (err.message && !err.message.includes('auth/')) {
         errorMsg = err.message;
       }
-      setAuthError(errorMsg);
-      alert(errorMsg);
+      setLoginError(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -571,12 +837,28 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   </label>
                 </div>
 
+                {/* Error Banner in Form */}
+                {loginError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-in fade-in duration-150">
+                    <span className="font-bold">⚠️</span>
+                    <span className="leading-relaxed">{loginError}</span>
+                  </div>
+                )}
+
                 {/* 로그인하기 Button */}
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all active:scale-[0.99] cursor-pointer shadow-sm mt-1"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all active:scale-[0.99] cursor-pointer shadow-sm mt-1 disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  로그인하기
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      <span>로그인 확인 중...</span>
+                    </>
+                  ) : (
+                    <span>로그인하기</span>
+                  )}
                 </button>
 
                 {/* Links: 아이디 찾기 | 비밀번호 재설정 */}
@@ -594,7 +876,20 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   <span className="text-[#dae2fd]">|</span>
                   <button
                     type="button"
-                    onClick={() => setScreen('find_password')}
+                    onClick={() => {
+                      if (loginId.includes('@')) {
+                        setFindPwEmail(loginId);
+                      } else if (emailUser.includes('@')) {
+                        setFindPwEmail(emailUser);
+                      } else {
+                        setFindPwEmail('');
+                      }
+                      setFindPwError(null);
+                      setFindPwSuccessMsg(null);
+                      setFindPwCodeSent(false);
+                      setFindPwCode('');
+                      setScreen('find_password');
+                    }}
                     className="hover:text-[#131b2e] transition-colors cursor-pointer"
                   >
                     비밀번호 재설정
@@ -602,24 +897,13 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 </div>
 
                 {/* Social and Sign up Buttons */}
-                <div className="pt-2 space-y-2 border-t border-[#f0f2f7]">
-                  {/* 카카오로 시작하기 */}
-                  <button
-                    type="button"
-                    onClick={handleKakaoLogin}
-                    className="w-full py-3 px-4 rounded-xl bg-[#FEE500] hover:bg-[#fae100] text-[#191919] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
-                  >
-                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
-                      <path d="M12 3c-5.523 0-10 3.582-10 8c0 2.88 1.868 5.418 4.717 6.804l-1.196 4.417c-.105.389.314.714.654.507l5.244-3.197c.189.014.38.021.581.021 5.523 0 10-3.582 10-8s-4.477-8-10-8z" />
-                    </svg>
-                    <span>카카오로 시작하기</span>
-                  </button>
-
-                  {/* 구글로 시작하기 */}
+                <div className="pt-3 space-y-3 border-t border-[#dae2fd]/50">
+                  {/* Google Login (Official OAuth) */}
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
-                    className="w-full py-3 px-4 rounded-xl bg-white hover:bg-[#f8f9fa] text-[#1f1f1f] font-bold text-xs border border-[#dadce0] flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-[#f8f9fa] text-[#1f1f1f] font-bold text-xs border border-[#dadce0] flex items-center justify-center gap-2.5 transition-all active:scale-[0.99] cursor-pointer shadow-xs disabled:opacity-60"
                   >
                     <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
@@ -627,29 +911,21 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                       <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.16 0 9.97 0 12s.45 3.84 1.24 5.42l4.04-3.15z"/>
                       <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
                     </svg>
-                    <span>구글로 시작하기</span>
+                    <span>Google 계정으로 계속하기</span>
                   </button>
 
-                  {/* 애플로 시작하기 */}
-                  <button
-                    type="button"
-                    onClick={handleAppleLogin}
-                    className="w-full py-3 px-4 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs"
-                  >
-                    <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
-                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.38c.62-.75 1.04-1.8 0.93-2.85-.9.04-1.99.6-2.63 1.35-.57.65-1.06 1.72-.93 2.74 1 .08 2.02-.49 2.63-1.24z"/>
-                    </svg>
-                    <span>애플로 시작하기</span>
-                  </button>
-
-                  {/* 회원가입하기 */}
-                  <button
-                    type="button"
-                    onClick={() => setScreen('email_step1')}
-                    className="w-full py-3 px-4 rounded-xl bg-[#f0f2f5] hover:bg-[#e4e6ea] text-[#131b2e] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
-                  >
-                    <span>회원가입하기</span>
-                  </button>
+                  {/* New Account Sign Up Callout */}
+                  <div className="pt-1 text-center">
+                    <span className="text-xs text-[#777587]">아직 ClipSort 계정이 없으신가요?</span>{' '}
+                    <button
+                      type="button"
+                      onClick={() => setScreen('email_step1')}
+                      className="text-xs font-bold text-[#5046e5] hover:underline cursor-pointer inline-flex items-center gap-0.5 ml-1"
+                    >
+                      <span>이메일 회원가입</span>
+                      <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -760,15 +1036,16 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
           </div>
         )}
 
-        {/* SCREEN: 비밀번호 찾기 */}
+        {/* SCREEN: 비밀번호 찾기 (실제 이메일 인증번호 발송 & 검증 연동) */}
         {screen === 'find_password' && (
           <div className="p-5 flex-1 flex flex-col justify-between">
             <div>
               {/* Header */}
               <div className="flex items-center justify-between pb-3">
                 <button
+                  type="button"
                   onClick={() => setScreen('email_direct_login')}
-                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#eaedff] active:scale-95"
+                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#eaedff] active:scale-95 transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
@@ -786,77 +1063,106 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 <div>
                   <h2 className="text-xs font-bold text-[#131b2e]">계정 인증 안내</h2>
                   <p className="text-[11px] text-[#777587] mt-0.5 leading-relaxed">
-                    가입 시 등록한 이메일 주소를 입력하시면 비밀번호 재설정 인증번호를 보내드립니다.
+                    가입 시 등록한 이메일 주소로 6자리 인증번호를 발송하여 본인 확인 후 비밀번호를 재설정합니다.
                   </p>
                 </div>
               </section>
 
+              {/* Error & Success Banners */}
+              {findPwError && (
+                <div className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-in fade-in duration-150">
+                  <span className="font-bold">⚠️</span>
+                  <span className="leading-relaxed">{findPwError}</span>
+                </div>
+              )}
+              {findPwSuccessMsg && (
+                <div className="mb-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2 animate-in fade-in duration-150">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{findPwSuccessMsg}</span>
+                </div>
+              )}
+
               {/* Form */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setScreen('reset_password_step');
-                }}
-                className="space-y-4"
-              >
+              <form onSubmit={handleVerifyFindPwCode} className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#131b2e] block">이메일 주소</label>
+                  <label className="text-xs font-bold text-[#131b2e] block">가입 이메일 주소</label>
                   <div className="flex gap-2">
                     <input
                       type="email"
-                      value={emailUser.includes('@') ? emailUser : `${emailUser}@clipsort.io`}
-                      onChange={(e) => setEmailUser(e.target.value)}
+                      value={findPwEmail}
+                      onChange={(e) => setFindPwEmail(e.target.value)}
+                      placeholder="user@example.com"
                       className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-[#dae2fd] text-xs text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
                     />
                     <button
                       type="button"
-                      onClick={() => alert('인증번호가 재전송되었습니다.')}
-                      className="px-3 py-2 rounded-xl bg-[#eaedff] text-xs font-bold text-[#3625cd] hover:bg-[#dae2fd]"
+                      onClick={handleSendFindPwCode}
+                      disabled={isSendingFindPwCode || !findPwEmail.trim()}
+                      className="px-3.5 py-2 rounded-xl bg-[#5046e5] text-white text-xs font-bold hover:bg-[#3625cd] transition-colors disabled:opacity-50 shrink-0 flex items-center gap-1 cursor-pointer shadow-xs"
                     >
-                      재전송
+                      {isSendingFindPwCode ? (
+                        <>
+                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>발송 중</span>
+                        </>
+                      ) : findPwCodeSent ? (
+                        '재전송'
+                      ) : (
+                        '인증번호 받기'
+                      )}
                     </button>
                   </div>
-                  <p className="text-[11px] text-[#00687a] flex items-center gap-1 mt-1">
-                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                    인증번호 6자리가 이메일로 발송되었습니다.
-                  </p>
                 </div>
 
-                {/* Verification Code */}
-                <div className="bg-white border border-[#dae2fd] rounded-xl p-3.5 shadow-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#131b2e]">인증번호 입력</label>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#ba1a1a] bg-[#ffdad6]/40 px-2 py-0.5 rounded-full">
-                      <span className="material-symbols-outlined text-[13px]">timer</span>
-                      03:00
-                    </span>
+                {/* Verification Code Box (Visible once sent) */}
+                {findPwCodeSent && (
+                  <div className="bg-white border border-[#dae2fd] rounded-xl p-3.5 shadow-xs space-y-2 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#131b2e]">6자리 인증번호 입력</label>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#ba1a1a] bg-[#ffdad6]/40 px-2 py-0.5 rounded-full">
+                        <span className="material-symbols-outlined text-[13px]">timer</span>
+                        {Math.floor(findPwTimer / 60).toString().padStart(2, '0')}:{(findPwTimer % 60).toString().padStart(2, '0')}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={findPwCode}
+                      onChange={(e) => setFindPwCode(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="6자리 숫자 입력"
+                      maxLength={6}
+                      className="w-full px-3 py-2.5 rounded-lg bg-[#f2f3ff] border border-[#5046e5] text-center font-bold tracking-widest text-[#131b2e] text-lg focus:outline-none"
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-[#777587] pt-1">
+                      <span>인증번호가 도착하지 않았나요?</span>
+                      <button
+                        type="button"
+                        onClick={handleSendFindPwCode}
+                        disabled={isSendingFindPwCode}
+                        className="text-[#5046e5] font-bold hover:underline cursor-pointer"
+                      >
+                        인증번호 다시 받기
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={findPwCode}
-                    onChange={(e) => setFindPwCode(e.target.value.replace(/[^0-9]/g, ''))}
-                    placeholder="인증번호 6자리 입력"
-                    maxLength={6}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#f2f3ff] border border-[#5046e5] text-center font-bold tracking-widest text-[#131b2e] text-lg focus:outline-none"
-                  />
-                  <div className="flex items-center justify-between text-[11px] text-[#777587] pt-1">
-                    <span>인증번호가 오지 않나요?</span>
-                    <button
-                      type="button"
-                      onClick={() => alert('새 인증번호가 발송되었습니다')}
-                      className="text-[#5046e5] font-bold hover:underline"
-                    >
-                      인증번호 재전송
-                    </button>
-                  </div>
-                </div>
+                )}
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  disabled={!findPwCodeSent || findPwCode.length !== 6 || isVerifyingFindPwCode}
+                  className="w-full py-3.5 rounded-xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                 >
-                  <span>다음 (비밀번호 재설정)</span>
-                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                  {isVerifyingFindPwCode ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      <span>인증번호 확인 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>다음 (새 비밀번호 설정)</span>
+                      <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                    </>
+                  )}
                 </button>
               </form>
             </div>
@@ -866,10 +1172,13 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
               <span>이메일이 기억나지 않으시나요? </span>
               <button
                 type="button"
-                onClick={() => alert('고객센터: support@clipsort.io')}
-                className="text-[#5046e5] font-bold hover:underline"
+                onClick={() => {
+                  setFoundIdResult(null);
+                  setScreen('find_id');
+                }}
+                className="text-[#5046e5] font-bold hover:underline cursor-pointer"
               >
-                개발팀 문의하기
+                아이디 찾기
               </button>
             </div>
           </div>
@@ -881,14 +1190,15 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
             <div>
               <div className="flex items-center justify-between pb-3">
                 <button
+                  type="button"
                   onClick={() => setScreen('find_password')}
-                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#eaedff] active:scale-95"
+                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#eaedff] active:scale-95 transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">비밀번호 재설정</h1>
+                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">새 비밀번호 설정</h1>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#eaedff] text-[#5046e5] font-bold">
-                  인증 완료
+                  본인 인증 완료
                 </span>
               </div>
 
@@ -900,60 +1210,167 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 <div>
                   <h2 className="text-xs font-bold text-[#131b2e]">새 비밀번호 입력</h2>
                   <p className="text-[11px] text-[#777587]">
-                    본인 인증이 완료되어 새 비밀번호로 즉시 변경됩니다.
+                    새 비밀번호를 설정하시면 즉시 반영되어 로그인됩니다.
                   </p>
                 </div>
               </section>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  alert('비밀번호가 성공적으로 재설정되었습니다. 새 비밀번호로 로그인합니다.');
-                  handleCompleteEmailSignup();
-                }}
-                className="space-y-4"
-              >
+              {/* Error banner */}
+              {resetPwError && (
+                <div className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-in fade-in duration-150">
+                  <span className="font-bold">⚠️</span>
+                  <span className="leading-relaxed">{resetPwError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleCompletePasswordReset} className="space-y-4">
+                {/* 1. New Password */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#131b2e]">새 비밀번호</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="영문, 숫자, 특수문자 조합 8~16자리"
-                    required
-                    className="w-full h-12 px-4 rounded-xl bg-white border border-[#dae2fd] text-sm text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
-                  />
+                  <div className="flex justify-between items-center mb-0.5">
+                    <label className="text-xs font-bold text-[#131b2e]">새 비밀번호</label>
+                    {(() => {
+                      const strength = evaluatePasswordStrength(newPassword);
+                      if (strength.tier === 'none') return null;
+                      return (
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-all animate-in fade-in duration-200 ${strength.bgColor}`}
+                        >
+                          {strength.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showNewPw ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="8~16자리 영문, 숫자, 특수문자 조합"
+                      required
+                      className="w-full h-12 px-4 pr-10 rounded-xl bg-white border border-[#dae2fd] text-sm text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777587] hover:text-[#131b2e] p-1 cursor-pointer"
+                    >
+                      {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {/* Requirements chips */}
                   <div className="flex gap-2 pt-1">
-                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-[#eaedff] text-[#3625cd] font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> 8자리 이상 16자리 이하
-                    </span>
-                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-[#eaedff] text-[#3625cd] font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> 영문/숫자/특수문자
-                    </span>
+                    {(() => {
+                      const isLengthValid = newPassword.length >= 8 && newPassword.length <= 16;
+                      const hasLetters = /[a-zA-Z]/.test(newPassword);
+                      const hasNumbers = /[0-9]/.test(newPassword);
+                      const hasSpecial = /[^a-zA-Z0-9]/.test(newPassword);
+                      const isComplexityValid = hasLetters && hasNumbers && hasSpecial;
+                      const hasInput = newPassword.length > 0;
+
+                      return (
+                        <>
+                          <span
+                            className={`text-[11px] px-2.5 py-1 rounded-full font-semibold flex items-center gap-1 transition-colors ${
+                              !hasInput
+                                ? 'bg-slate-100 text-slate-500'
+                                : isLengthValid
+                                ? 'bg-[#eaedff] text-[#3625cd]'
+                                : 'bg-rose-50 text-rose-600'
+                            }`}
+                          >
+                            {!hasInput ? (
+                              <span className="w-3 h-3 text-[9px] inline-flex items-center justify-center">•</span>
+                            ) : isLengthValid ? (
+                              <CheckCircle2 className="w-3 h-3 text-[#2563eb]" />
+                            ) : (
+                              <XCircle className="w-3 h-3 text-[#dc2626]" />
+                            )}
+                            8자리 이상 16자리 이하
+                          </span>
+                          <span
+                            className={`text-[11px] px-2.5 py-1 rounded-full font-semibold flex items-center gap-1 transition-colors ${
+                              !hasInput
+                                ? 'bg-slate-100 text-slate-500'
+                                : isComplexityValid
+                                ? 'bg-[#eaedff] text-[#3625cd]'
+                                : 'bg-rose-50 text-rose-600'
+                            }`}
+                          >
+                            {!hasInput ? (
+                              <span className="w-3 h-3 text-[9px] inline-flex items-center justify-center">•</span>
+                            ) : isComplexityValid ? (
+                              <CheckCircle2 className="w-3 h-3 text-[#2563eb]" />
+                            ) : (
+                              <XCircle className="w-3 h-3 text-[#dc2626]" />
+                            )}
+                            영문/숫자/특수문자
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
+                {/* 2. New Password Confirm */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#131b2e]">비밀번호 확인</label>
-                  <input
-                    type="password"
-                    value={passwordConfirm}
-                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                    placeholder="새 비밀번호를 한 번 더 입력하세요"
-                    required
-                    className="w-full h-12 px-4 rounded-xl bg-white border border-[#5046e5] text-sm text-[#131b2e] focus:outline-none"
-                  />
-                  <p className="text-[11px] text-[#00687a] font-semibold flex items-center gap-1 pt-1">
-                    <Check className="w-3 h-3" /> 새 비밀번호와 일치합니다.
-                  </p>
+                  <label className="text-xs font-bold text-[#131b2e]">새 비밀번호 확인</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmNewPw ? 'text' : 'password'}
+                      value={newPasswordConfirm}
+                      onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                      placeholder="새 비밀번호를 한 번 더 입력하세요"
+                      required
+                      className={`w-full h-12 px-4 pr-10 rounded-xl bg-white border text-sm text-[#131b2e] focus:outline-none transition-colors ${
+                        !newPasswordConfirm
+                          ? 'border-[#dae2fd] focus:border-[#5046e5]'
+                          : newPassword && newPassword === newPasswordConfirm
+                          ? 'border-[#2563eb]'
+                          : 'border-[#dc2626]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmNewPw(!showConfirmNewPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777587] hover:text-[#131b2e] p-1 cursor-pointer"
+                    >
+                      {showConfirmNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {newPassword && newPasswordConfirm && newPassword === newPasswordConfirm && (
+                    <p className="text-[11px] text-[#2563eb] font-semibold flex items-center gap-1 pt-1">
+                      <CheckCircle2 className="w-3 h-3" /> 새 비밀번호와 일치합니다.
+                    </p>
+                  )}
+                  {newPasswordConfirm && newPassword !== newPasswordConfirm && (
+                    <p className="text-[11px] text-[#dc2626] font-semibold flex items-center gap-1 pt-1">
+                      <XCircle className="w-3 h-3" /> 비밀번호가 일치하지 않습니다.
+                    </p>
+                  )}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 rounded-xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  disabled={
+                    isSubmittingReset ||
+                    !newPassword ||
+                    newPassword.length < 8 ||
+                    newPassword !== newPasswordConfirm
+                  }
+                  className="w-full py-3.5 rounded-xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                 >
-                  <span>비밀번호 재설정 완료</span>
-                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                  {isSubmittingReset ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      <span>비밀번호 재설정 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>비밀번호 재설정 완료</span>
+                      <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                    </>
+                  )}
                 </button>
               </form>
             </div>
@@ -1359,13 +1776,26 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
               <div className="mb-2">
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-bold text-[#131b2e]">비밀번호</label>
-                  <span className="text-[11px] text-[#5046e5] font-semibold">안전한 강도</span>
+                  {(() => {
+                    const strength = evaluatePasswordStrength(password);
+                    if (strength.tier === 'none') {
+                      return null;
+                    }
+                    return (
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-all animate-in fade-in duration-200 ${strength.bgColor}`}
+                      >
+                        {strength.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="relative">
                   <input
                     type={showPw ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder="8~16자리 영문, 숫자, 특수문자 입력"
                     className="w-full px-4 py-3 bg-white border border-[#dae2fd] rounded-2xl text-sm text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[#777587]">
@@ -1376,37 +1806,116 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 </div>
               </div>
 
-              {/* Security conditions chips */}
-              <div className="p-3 bg-[#f2f3ff] rounded-2xl border border-[#dae2fd] flex items-center justify-between text-[11px] text-[#3625cd] font-semibold mb-3">
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#5046e5]" /> 8자리 이상 16자리 이하
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#5046e5]" /> 영문/숫자/특수문자 포함
-                </span>
-              </div>
+              {/* Security conditions chips (Dynamic evaluation: neutral when empty, success when met, X when not met) */}
+              {(() => {
+                const isLengthValid = password.length >= 8 && password.length <= 16;
+                const hasLetters = /[a-zA-Z]/.test(password);
+                const hasNumbers = /[0-9]/.test(password);
+                const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+                const isComplexityValid = hasLetters && hasNumbers && hasSpecial;
+                const hasPasswordInput = password.length > 0;
+
+                return (
+                  <div className="p-3 bg-[#f2f3ff] rounded-2xl border border-[#dae2fd] flex items-center justify-between text-[11px] font-semibold mb-3">
+                    {/* Condition 1: 8 to 16 characters */}
+                    <span
+                      className={`flex items-center gap-1 transition-colors ${
+                        !hasPasswordInput
+                          ? 'text-[#777587]'
+                          : isLengthValid
+                          ? 'text-[#2563eb]'
+                          : 'text-[#dc2626]'
+                      }`}
+                    >
+                      {!hasPasswordInput ? (
+                        <span className="w-3.5 h-3.5 rounded-full border border-[#777587]/60 inline-flex items-center justify-center text-[9px] text-[#777587]">
+                          •
+                        </span>
+                      ) : isLengthValid ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#2563eb]" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 text-[#dc2626]" />
+                      )}
+                      <span>8자리 이상 16자리 이하</span>
+                    </span>
+
+                    {/* Condition 2: letters + numbers + special characters */}
+                    <span
+                      className={`flex items-center gap-1 transition-colors ${
+                        !hasPasswordInput
+                          ? 'text-[#777587]'
+                          : isComplexityValid
+                          ? 'text-[#2563eb]'
+                          : 'text-[#dc2626]'
+                      }`}
+                    >
+                      {!hasPasswordInput ? (
+                        <span className="w-3.5 h-3.5 rounded-full border border-[#777587]/60 inline-flex items-center justify-center text-[9px] text-[#777587]">
+                          •
+                        </span>
+                      ) : isComplexityValid ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#2563eb]" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 text-[#dc2626]" />
+                      )}
+                      <span>영문/숫자/특수문자 포함</span>
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Password confirm input */}
-              <div className="mb-2">
-                <label className="text-xs font-bold text-[#131b2e] block mb-1">비밀번호 확인</label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPw ? 'text' : 'password'}
-                    value={passwordConfirm}
-                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border-2 border-[#5046e5] rounded-2xl text-sm text-[#131b2e] focus:outline-none"
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[#5046e5]">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)}>
-                      {showConfirmPw ? <EyeOff className="w-4 h-4 text-[#777587]" /> : <Eye className="w-4 h-4 text-[#777587]" />}
-                    </button>
+              {(() => {
+                const hasBoth = Boolean(password && passwordConfirm);
+                const isMatch = hasBoth && password === passwordConfirm;
+                const isMismatch = Boolean(passwordConfirm && password !== passwordConfirm);
+
+                return (
+                  <div className="mb-2">
+                    <label className="text-xs font-bold text-[#131b2e] block mb-1">비밀번호 확인</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPw ? 'text' : 'password'}
+                        value={passwordConfirm}
+                        onChange={(e) => setPasswordConfirm(e.target.value)}
+                        placeholder="새 비밀번호를 한 번 더 입력하세요"
+                        className={`w-full px-4 py-3 bg-white border-2 rounded-2xl text-sm text-[#131b2e] focus:outline-none transition-colors ${
+                          !passwordConfirm
+                            ? 'border-[#dae2fd] focus:border-[#5046e5]'
+                            : isMatch
+                            ? 'border-[#2563eb] focus:border-[#2563eb]'
+                            : 'border-[#dc2626] focus:border-[#dc2626]'
+                        }`}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                        {isMatch && <CheckCircle2 className="w-4 h-4 text-[#2563eb]" />}
+                        {isMismatch && <XCircle className="w-4 h-4 text-[#dc2626]" />}
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPw(!showConfirmPw)}
+                          className="text-[#777587] hover:text-[#131b2e] p-0.5"
+                        >
+                          {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Status message: only show when user has entered confirmation */}
+                    {isMatch && (
+                      <p className="text-[11px] text-[#2563eb] font-semibold mt-1 flex items-center gap-1 animate-in fade-in duration-150">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>비밀번호가 일치합니다.</span>
+                      </p>
+                    )}
+                    {isMismatch && (
+                      <p className="text-[11px] text-[#dc2626] font-semibold mt-1 flex items-center gap-1 animate-in fade-in duration-150">
+                        <XCircle className="w-3 h-3" />
+                        <span>비밀번호가 일치하지 않습니다.</span>
+                      </p>
+                    )}
                   </div>
-                </div>
-                <p className="text-[11px] text-[#5046e5] font-semibold mt-1 flex items-center gap-1">
-                  ✓ 비밀번호가 일치합니다.
-                </p>
-              </div>
+                );
+              })()}
 
               {/* End-to-end encryption note */}
               <div className="p-3 rounded-2xl bg-white border border-[#dae2fd] flex items-center gap-2 text-[11px] text-[#464555]">
@@ -1417,415 +1926,74 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
             {/* Bottom Actions */}
             <div className="pt-4 space-y-2">
-              {authError && (
-                <div className="mb-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2">
-                  <span className="font-bold">⚠️</span>
-                  <span>{authError}</span>
+              {signupError && (
+                <div
+                  className={`mb-2 p-3.5 rounded-2xl border text-xs flex flex-col gap-2.5 animate-in fade-in duration-200 ${
+                    isExistingAccount
+                      ? 'bg-amber-50/90 border-amber-200 text-amber-900'
+                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-sm leading-none shrink-0">
+                      {isExistingAccount ? 'ℹ️' : '⚠️'}
+                    </span>
+                    <span className="leading-relaxed font-medium">{signupError}</span>
+                  </div>
+
+                  {isExistingAccount && (
+                    <div className="pt-1 flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoginId(fullEmail);
+                          setScreen('email_direct_login');
+                          setTimeout(() => {
+                            setLoginError(
+                              `이미 가입된 계정(${fullEmail})입니다. 기존 비밀번호를 입력해 로그인해 주세요.`
+                            );
+                          }, 50);
+                        }}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-white border border-amber-300 text-amber-900 font-bold text-xs hover:bg-amber-100/70 transition-colors cursor-pointer text-center shadow-xs"
+                      >
+                        기존 계정으로 로그인하기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteEmailSignup(true)}
+                        disabled={isSubmitting || !password || password !== passwordConfirm}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-[#5046e5] text-white font-bold text-xs hover:bg-[#3625cd] transition-colors cursor-pointer text-center disabled:opacity-50 shadow-xs"
+                      >
+                        새 비밀번호로 변경 후 로그인
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={handleCompleteEmailSignup}
-                disabled={isSubmitting || !password || password !== passwordConfirm}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RotateCw className="w-4 h-4 animate-spin" />
-                    <span>계정 생성 및 로그인 중...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>회원가입 완료 및 로그인</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+
+              {!isExistingAccount && (
+                <button
+                  type="button"
+                  onClick={() => handleCompleteEmailSignup(false)}
+                  disabled={isSubmitting || !password || password !== passwordConfirm}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md shadow-[#5046e5]/30 hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      <span>계정 생성 및 로그인 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>회원가입 완료 및 로그인</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              )}
               <p className="text-[10px] text-center text-[#777587]">
                 가입 시 서비스 이용약관 및 개인정보 처리방침에 동의하게 됩니다.
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* SCREEN 4: 카카오계정 로그인 모달 (Image 11) */}
-        {screen === 'kakao_login' && (
-          <div className="p-5 flex-1 flex flex-col justify-between">
-            <div>
-              {/* Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-[#f2f3ff]">
-                <button onClick={() => setScreen('email_step1')} className="p-1 text-[#131b2e]">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="flex items-center gap-1 text-sm font-bold text-[#131b2e]">
-                  <span>🔒 카카오계정 로그인</span>
-                </div>
-                <button onClick={onClose} className="p-1 text-[#777587]">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* App Lockup */}
-              <div className="py-4 text-center">
-                <div className="w-14 h-14 mx-auto mb-2 rounded-2xl bg-[#5046e5] relative flex items-center justify-center text-white shadow-md">
-                  <span className="text-2xl">✨</span>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#FEE500] flex items-center justify-center text-black text-xs font-bold">
-                    💬
-                  </div>
-                </div>
-                <h2 className="text-xl font-bold text-[#131b2e]">ClipSort</h2>
-                <p className="text-xs text-[#464555] mt-1">
-                  ClipSort에서 사용자의 카카오계정 정보를 요청합니다.
-                </p>
-              </div>
-
-              {/* User Preview Card */}
-              <div className="p-3.5 rounded-2xl bg-white border border-[#dae2fd] flex items-center justify-between mb-4 shadow-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-amber-100 flex items-center justify-center text-base font-bold text-amber-800">
-                    김
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-bold text-[#131b2e]">김클립</span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#eaedff] text-[#5046e5] font-semibold">
-                        간편로그인
-                      </span>
-                    </div>
-                    <span className="text-xs text-[#777587]">clip_kim@kakao.com</span>
-                  </div>
-                </div>
-                <button className="text-xs font-semibold text-[#5046e5] hover:underline">
-                  다른 계정
-                </button>
-              </div>
-
-              {/* Consent Box */}
-              <div className="p-4 rounded-2xl bg-white border border-[#dae2fd] space-y-3 mb-4">
-                <label className="flex items-center gap-2 cursor-pointer pb-2 border-b border-[#dae2fd]">
-                  <input
-                    type="checkbox"
-                    checked={kakaoTerms.email && kakaoTerms.profile}
-                    onChange={(e) =>
-                      setKakaoTerms({
-                        email: e.target.checked,
-                        profile: e.target.checked,
-                        alarm: e.target.checked,
-                      })
-                    }
-                    className="w-4 h-4 rounded text-amber-500"
-                  />
-                  <span className="text-xs font-bold text-[#131b2e]">
-                    전체 동의하기 <span className="font-normal text-[#777587]">(선택 항목 포함)</span>
-                  </span>
-                </label>
-
-                <div className="space-y-2 text-xs">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={kakaoTerms.email}
-                      onChange={(e) => setKakaoTerms({ ...kakaoTerms, email: e.target.checked })}
-                      className="w-4 h-4 rounded text-amber-500 mt-0.5"
-                    />
-                    <div>
-                      <span className="font-bold text-[#131b2e]">[필수]</span> 카카오계정(이메일) 제공 동의
-                      <p className="text-[11px] text-[#777587]">북마크 동기화 및 계정 식별 목적으로 활용됩니다.</p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={kakaoTerms.profile}
-                      onChange={(e) => setKakaoTerms({ ...kakaoTerms, profile: e.target.checked })}
-                      className="w-4 h-4 rounded text-amber-500 mt-0.5"
-                    />
-                    <div>
-                      <span className="font-bold text-[#131b2e]">[필수]</span> 프로필 정보(닉네임/사진) 제공 동의
-                      <p className="text-[11px] text-[#777587]">ClipSort 내 사용자 맞춤 큐레이션 표시용</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Disclaimer */}
-              <div className="p-3 bg-[#f2f3ff] rounded-xl text-[11px] text-[#777587] leading-relaxed">
-                동의 항목은 카카오 개인정보 제3자 제공 동의 정책에 따라 안전하게 전송되며, 서비스 탈퇴 시 파기됩니다.
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-4 space-y-2">
-              <button
-                type="button"
-                onClick={handleKakaoLogin}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#FEE500] text-[#191919] font-bold text-sm shadow-md hover:bg-[#ebd300] flex items-center justify-center gap-2 transition-all"
-              >
-                <span>💬 동의하고 계속하기</span>
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full py-2 text-xs font-semibold text-[#777587] hover:text-[#131b2e]"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* SCREEN 5 & 6: Google 계정 선택 & 동의 모달 (Image 13 & 15) */}
-        {(screen === 'google_select' || screen === 'google_consent') && (
-          <div className="p-5 flex-1 flex flex-col justify-between">
-            <div>
-              {/* Browser style chrome */}
-              <div className="flex items-center justify-between pb-3 border-b border-[#dae2fd]">
-                <button onClick={onClose} className="p-1 text-[#777587]">
-                  <X className="w-5 h-5" />
-                </button>
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#dae2fd] rounded-full text-xs text-[#464555]">
-                  <span>🔒 accounts.google.com</span>
-                </div>
-                <div className="flex items-center gap-1 text-[#777587]">
-                  <RotateCw className="w-4 h-4" />
-                  <MoreVertical className="w-4 h-4" />
-                </div>
-              </div>
-
-              {/* Google G logo */}
-              <div className="py-4 text-center">
-                <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z" />
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.36 24 12 24Z" />
-                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15Z" />
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.36 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z" />
-                </svg>
-
-                {screen === 'google_select' ? (
-                  <>
-                    <h2 className="text-xl font-bold text-[#131b2e]">계정 선택</h2>
-                    <p className="text-xs text-[#5046e5] font-semibold mt-0.5">
-                      ClipSort 앱으로 계속 이동합니다
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="text-xl font-bold text-[#131b2e]">ClipSort 앱에 로그인</h2>
-                    <div className="inline-flex items-center gap-1 px-2.5 py-0.5 mt-1 rounded-full bg-[#eaedff] text-[#5046e5] text-xs font-semibold">
-                      <span>✨ ClipSort 서비스로 연결됩니다</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {screen === 'google_select' ? (
-                /* Account Select List (Image 13) */
-                <div className="space-y-2 mb-4">
-                  <button
-                    onClick={() => setScreen('google_consent')}
-                    className="w-full p-3 rounded-2xl bg-white border border-[#dae2fd] hover:border-[#5046e5] flex items-center justify-between text-left transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#5046e5] text-white font-bold flex items-center justify-center relative">
-                        A
-                        <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full absolute bottom-0 right-0 border-2 border-white" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-bold text-[#131b2e]">Alex Kim</span>
-                          <span className="text-[10px] bg-[#eaedff] text-[#5046e5] px-1.5 py-0.5 rounded font-semibold">
-                            현재 로그인
-                          </span>
-                        </div>
-                        <span className="text-xs text-[#777587]">creator.alex@gmail.com</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#777587]" />
-                  </button>
-
-                  <button
-                    onClick={() => setScreen('google_consent')}
-                    className="w-full p-3 rounded-2xl bg-white border border-[#dae2fd] hover:border-[#5046e5] flex items-center justify-between text-left transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center">
-                        C
-                      </div>
-                      <div>
-                        <span className="text-sm font-bold text-[#131b2e] block">Clip Team</span>
-                        <span className="text-xs text-[#777587]">clip.team.work@gmail.com</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#777587]" />
-                  </button>
-                </div>
-              ) : (
-                /* Google Consent Detail (Image 15) */
-                <div className="space-y-4 mb-4">
-                  <div className="p-3 bg-white border border-[#dae2fd] rounded-2xl flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-[#5046e5] text-white font-bold flex items-center justify-center text-xs">
-                        A
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-[#131b2e] block">Alex Kim</span>
-                        <span className="text-[11px] text-[#777587]">creator.alex@gmail.com</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setScreen('google_select')}
-                      className="text-xs font-semibold text-[#5046e5] hover:underline"
-                    >
-                      계정 전환
-                    </button>
-                  </div>
-
-                  <div className="p-4 bg-[#f2f3ff] rounded-2xl border border-[#dae2fd] space-y-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
-                        <Check className="w-3 h-3" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-[#131b2e] block">기본 프로필 정보 확인</span>
-                        <p className="text-[11px] text-[#777587]">사용자 이름 및 Google 프로필 사진을 가져옵니다.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
-                        <Check className="w-3 h-3" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-[#131b2e] block">이메일 주소 확인</span>
-                        <p className="text-[11px] text-[#777587]">계정 식별 및 서비스 주요 알림 발송 목적으로 사용됩니다.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-2 space-y-2">
-              {screen === 'google_consent' ? (
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all"
-                >
-                  <span>동의하고 계속</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setScreen('google_consent')}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-[#5046e5] text-white font-bold text-sm shadow-md hover:bg-[#3625cd] flex items-center justify-center gap-1.5 transition-all"
-                >
-                  <span>선택한 계정으로 계속</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full py-2 text-xs font-semibold text-[#777587] hover:text-[#131b2e]"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* SCREEN 7: Apple ID로 로그인 모달 (Image 17) */}
-        {screen === 'apple_login' && (
-          <div className="p-5 flex-1 flex flex-col justify-between">
-            <div>
-              {/* iOS style top handle and close */}
-              <div className="w-10 h-1 bg-[#dae2fd] rounded-full mx-auto mb-3" />
-              <div className="flex justify-end mb-2">
-                <button onClick={onClose} className="p-1 rounded-full bg-[#f2f3ff] text-[#777587]">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Apple icon */}
-              <div className="text-center py-2">
-                <div className="w-12 h-12 mx-auto rounded-full bg-white border border-[#dae2fd] flex items-center justify-center text-2xl shadow-xs mb-2">
-                  
-                </div>
-                <h2 className="text-xl font-bold text-[#131b2e]">Apple ID로 로그인</h2>
-                <p className="text-xs text-[#777587] mt-1">ClipSort에서 계정을 생성하거나 로그인합니다.</p>
-              </div>
-
-              {/* User details */}
-              <div className="mt-4 p-4 rounded-2xl bg-white border border-[#dae2fd] space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-[#f2f3ff]">
-                  <span className="text-[#777587]">이름</span>
-                  <span className="font-bold text-[#131b2e]">김클립</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-[#777587]">Apple ID</span>
-                  <span className="font-semibold text-[#131b2e]">alex.kim@icloud.com</span>
-                </div>
-              </div>
-
-              {/* Email hide radio options */}
-              <div className="mt-3 p-4 rounded-2xl bg-white border border-[#dae2fd] space-y-3">
-                <label
-                  onClick={() => setAppleHideEmail(true)}
-                  className="flex items-start gap-3 cursor-pointer"
-                >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    appleHideEmail ? 'border-[#5046e5] bg-[#5046e5]' : 'border-[#dae2fd]'
-                  }`}>
-                    {appleHideEmail && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-[#131b2e] block">나의 이메일 가리기</span>
-                    <p className="text-[11px] text-[#777587]">임의의 고유한 주소를 생성하여 실제 이메일로 전달합니다.</p>
-                  </div>
-                </label>
-
-                <label
-                  onClick={() => setAppleHideEmail(false)}
-                  className="flex items-start gap-3 cursor-pointer pt-2 border-t border-[#f2f3ff]"
-                >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    !appleHideEmail ? 'border-[#5046e5] bg-[#5046e5]' : 'border-[#dae2fd]'
-                  }`}>
-                    {!appleHideEmail && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-[#131b2e] block">나의 이메일 공유</span>
-                    <p className="text-[11px] text-[#777587]">alex.kim@icloud.com</p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Biometrics hint */}
-              <div className="mt-4 text-center">
-                <span className="text-xs font-semibold text-[#5046e5] flex items-center justify-center gap-1.5">
-                  <span>🙂 이중 클릭하여 계속 / Face ID로 인증</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-4 space-y-2">
-              <button
-                type="button"
-                onClick={handleAppleLogin}
-                className="w-full py-3.5 px-4 rounded-2xl bg-black text-white font-bold text-sm shadow-md hover:bg-neutral-800 flex items-center justify-center gap-1.5 transition-all"
-              >
-                <span> 계속하기</span>
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full py-2 text-xs font-semibold text-[#777587] hover:text-[#131b2e]"
-              >
-                취소
-              </button>
             </div>
           </div>
         )}

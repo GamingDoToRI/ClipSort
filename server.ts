@@ -7,6 +7,7 @@ import { handleSendTestEmail } from './src/server/emailTestService.js';
 import { handleSendVerificationCode } from './api/send-verification-code.js';
 import { handleVerifyCode } from './api/verify-code.js';
 import { handleCompleteSignup } from './api/complete-signup.js';
+import { handleDeleteAccount } from './api/delete-account.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.all('/api/test-email', handleSendTestEmail);
 app.all('/api/send-verification-code', handleSendVerificationCode);
 app.all('/api/verify-code', handleVerifyCode);
 app.all('/api/complete-signup', handleCompleteSignup);
+app.all('/api/delete-account', handleDeleteAccount);
 
 // YouTube & URL metadata extraction and AI categorization
 app.all('/api/extract-and-classify', handleExtractAndClassify);

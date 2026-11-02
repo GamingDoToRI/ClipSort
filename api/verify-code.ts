@@ -21,8 +21,8 @@ export async function handleVerifyCode(req: any, res: any) {
     const result = await verifyOtpCode(email, code);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error: any) {
-    console.error('[Verify Code API Error]:', error.message);
-    return res.status(500).json({
+    console.warn('[Verify Code Notice]:', error.message);
+    return res.status(400).json({
       success: false,
       error: error.message || '인증번호 검증 처리 중 오류가 발생했습니다.',
     });
