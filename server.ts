@@ -20,6 +20,16 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
 
+// Explicitly serve Service Worker and manifest with correct MIME types
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.sendFile(path.resolve(__dirname, 'public', 'sw.js'));
+});
+
+// Serve public static assets (icons, manifest.json, etc.)
+app.use(express.static(path.resolve(__dirname, 'public')));
+
 // Resend email test endpoint (supports both /api/send-test-email and alias /api/test-email)
 app.all('/api/send-test-email', handleSendTestEmail);
 app.all('/api/test-email', handleSendTestEmail);

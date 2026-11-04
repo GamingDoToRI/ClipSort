@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="50%" stop-color="#5046e5" />
+      <stop offset="100%" stop-color="#3730a3" />
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0e7ff" />
+    </linearGradient>
+    <linearGradient id="play-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#1e1b4b" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background with squircle corners -->
+  <rect width="512" height="512" rx="128" fill="url(#bg-grad)" />
+
+  <!-- Subtle glow ring inside -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.15" />
+
+  <!-- Main Symbol: Modern Bookmark Clip with Play Center -->
+  <g filter="url(#shadow)" transform="translate(0, -6)">
+    <!-- Bookmark ribbon container -->
+    <path
+      d="M176 112 C167 112 160 119 160 128 L160 376 C160 388 174 395 184 388 L256 338 L328 388 C338 395 352 388 352 376 L352 128 C352 119 345 112 336 112 Z"
+      fill="url(#accent-grad)"
+    />
+
+    <!-- Video Play Symbol inside Bookmark -->
+    <circle cx="256" cy="226" r="54" fill="url(#bg-grad)" />
+    <!-- Glowing play triangle -->
+    <path
+      d="M242 200 C242 195.5 246.8 192.8 250.7 195.2 L282.7 215.2 C286.3 217.4 286.3 222.6 282.7 224.8 L250.7 244.8 C246.8 247.2 242 244.5 242 240 Z"
+      fill="#ffffff"
+    />
+
+    <!-- AI Sparkle Icon at Top Right -->
+    <g transform="translate(320, 100)">
+      <path
+        d="M0 16 C12 16 16 12 16 0 C16 12 20 16 32 16 C20 16 16 20 16 32 C16 20 12 16 0 16 Z"
+        fill="#38bdf8"
+      />
+    </g>
+  </g>
+</svg>

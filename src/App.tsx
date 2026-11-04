@@ -20,6 +20,8 @@ import { ContactSubView } from './components/settings/ContactSubView';
 import { OpenSourceSubView } from './components/settings/OpenSourceSubView';
 import { TrashView } from './components/trash/TrashView';
 import { AdminEmailTestPanel } from './components/dev/AdminEmailTestPanel';
+import { PWAInstallModal } from './components/pwa/PWAInstallModal';
+import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 import {
   VideoBookmark,
   TrashItem,
@@ -232,6 +234,7 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [videoToChange, setVideoToChange] = useState<VideoBookmark | null>(null);
   const [videoToDeleteConfirm, setVideoToDeleteConfirm] = useState<VideoBookmark | null>(null);
+  const [isPWAInstallOpen, setIsPWAInstallOpen] = useState(false);
 
   // Trash notification badge
   const [hasUnreadTrash, setHasUnreadTrash] = useState(false);
@@ -242,6 +245,29 @@ export default function App() {
       setHasUnreadTrash(false);
     }
   }, [activeTab]);
+
+  // Check URL parameter or storage flag for PWA install (when opened from iframe to top-level tab)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isParamInstall = params.get('pwa') === 'install';
+      const isHashInstall = window.location.hash.includes('pwa-install');
+      const isStorageInstall = localStorage.getItem('clipsort_open_pwa_install') === 'true';
+
+      if (isParamInstall || isHashInstall || isStorageInstall) {
+        localStorage.removeItem('clipsort_open_pwa_install');
+        setIsPWAInstallOpen(true);
+
+        // Clean up URL parameters cleanly without triggering a reload
+        if (isParamInstall || isHashInstall) {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, '', cleanUrl);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -936,6 +962,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#131b2e] flex flex-col font-sans transition-colors duration-200">
+      {/* 오프라인 네트워크 감지 배너 */}
+      <OfflineIndicator />
+
       {/* 고정 상단 헤더 */}
       <Header
         primaryColor={themeColor.hex}
@@ -1026,6 +1055,7 @@ export default function App() {
             onOpenAuth={() => setIsAuthOpen(true)}
             onLogout={handleLogout}
             onShowToast={(msg) => showToast(msg)}
+            onOpenInstall={() => setIsPWAInstallOpen(true)}
           />
         )}
 
@@ -1198,6 +1228,14 @@ export default function App() {
         currentUserId={user.uid}
         currentUserEmail={user.email}
         isLoggedIn={user.isLoggedIn}
+        onShowToast={showToast}
+      />
+
+      {/* PWA 홈 화면 설치 안내 모달 */}
+      <PWAInstallModal
+        isOpen={isPWAInstallOpen}
+        onClose={() => setIsPWAInstallOpen(false)}
+        primaryColor={themeColor.hex}
         onShowToast={showToast}
       />
 

@@ -11,6 +11,7 @@ interface SettingsViewProps {
   onOpenAuth: () => void;
   onLogout: () => void;
   onShowToast: (msg: string) => void;
+  onOpenInstall?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -22,14 +23,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenAuth,
   onLogout,
   onShowToast,
+  onOpenInstall,
 }) => {
   // Settings toggle states
   const [autoDetectClipboard, setAutoDetectClipboard] = useState(true);
   const [autoClassifyPush, setAutoClassifyPush] = useState(true);
   const [marketingPush, setMarketingPush] = useState(false);
-
-  // Modals for withdraw
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
   const displayModeLabel =
     displayMode === 'system'
@@ -37,12 +36,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       : displayMode === 'light'
       ? '밝게'
       : '어둡게';
-
-  const handleConfirmWithdraw = () => {
-    setShowWithdrawModal(false);
-    onLogout();
-    onShowToast('회원탈퇴 처리가 완료되었습니다.');
-  };
 
   return (
     <div className="w-full max-w-xl mx-auto pb-28 pt-1">
@@ -176,6 +169,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </span>
               </div>
             </button>
+
+            {/* 홈 화면에 앱 설치 (PWA) */}
+            {onOpenInstall && (
+              <button
+                type="button"
+                onClick={onOpenInstall}
+                className="w-full flex items-center justify-between p-4 text-left transition-colors duration-150 hover:bg-[#f2f3ff] active:bg-[#eaedff] cursor-pointer"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#5046e5]">
+                    <span className="material-symbols-outlined text-[19px]">install_mobile</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-[#131b2e]">홈 화면에 앱 설치</p>
+                    <p className="text-xs text-[#777587]">
+                      앱스토어 없이 모바일 독립 실행 앱으로 추가
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-[11px] font-semibold text-[#5046e5] bg-[#eaedff] px-2 py-0.5 rounded-full">
+                    PWA 지원
+                  </span>
+                  <span className="material-symbols-outlined text-[#777587] text-[18px]">
+                    chevron_right
+                  </span>
+                </div>
+              </button>
+            )}
           </div>
         </section>
 
@@ -381,27 +403,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 chevron_right
               </span>
             </button>
-
-            {/* 회원탈퇴 (로그인 상태일 때만 노출) */}
-            {user.isLoggedIn && (
-              <button
-                type="button"
-                onClick={() => setShowWithdrawModal(true)}
-                className="w-full flex items-center justify-between p-4 text-left transition-colors duration-150 hover:bg-[#ffdad6]/30 active:bg-[#ffdad6]/60 cursor-pointer"
-              >
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#ffdad6]/50 flex items-center justify-center text-[#ba1a1a]">
-                    <span className="material-symbols-outlined text-[19px]">
-                      person_remove
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium text-[#ba1a1a]">회원탈퇴</span>
-                </div>
-                <span className="material-symbols-outlined text-[#ba1a1a]/60 text-[18px]">
-                  chevron_right
-                </span>
-              </button>
-            )}
           </div>
         </section>
 
@@ -413,47 +414,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </p>
         </footer>
       </div>
-
-      {/* 회원탈퇴 확인 팝업 모달 */}
-      {showWithdrawModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200"
-          onClick={() => setShowWithdrawModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 shadow-2xl max-w-xs mx-auto text-center w-[85%] border border-[#dae2fd]/60 animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-12 h-12 rounded-full p-3 mx-auto mb-3 flex items-center justify-center bg-[#ffdad6] text-[#ba1a1a]">
-              <span className="material-symbols-outlined text-[24px]">person_remove</span>
-            </div>
-            <h2 className="font-bold text-base text-[#ba1a1a] mb-1.5 tracking-tight">
-              회원을 탈퇴하시겠습니까?
-            </h2>
-            <p className="text-xs text-[#777587] leading-relaxed mb-6">
-              탈퇴 시 저장된 모든 영상 북마크와 AI 자동 분류 데이터가 영구적으로 삭제되며 복구할 수 없습니다.
-            </p>
-            <div className="flex items-center space-x-2 w-full">
-              <button
-                type="button"
-                onClick={() => setShowWithdrawModal(false)}
-                className="w-full py-3 rounded-xl bg-[#f2f3ff] text-[#131b2e] font-semibold text-xs hover:bg-[#eaedff] transition-colors active:scale-[0.98] cursor-pointer"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmWithdraw}
-                className="w-full py-3 rounded-xl bg-[#ba1a1a] text-white font-semibold text-xs hover:bg-red-700 transition-colors active:scale-[0.98] shadow-sm cursor-pointer"
-              >
-                탈퇴하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
