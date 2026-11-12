@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { LinkInputArea } from './components/LinkInputArea';
 import { CategoryTabs } from './components/CategoryTabs';
@@ -22,6 +22,7 @@ import { TrashView } from './components/trash/TrashView';
 import { AdminEmailTestPanel } from './components/dev/AdminEmailTestPanel';
 import { PWAInstallModal } from './components/pwa/PWAInstallModal';
 import { OfflineIndicator } from './components/pwa/OfflineIndicator';
+import { BookmarkSearchBar, PlatformFilter, SortOrderType } from './components/BookmarkSearchBar';
 import {
   VideoBookmark,
   TrashItem,
@@ -32,7 +33,7 @@ import {
   ThemeColorOption,
   VideoLinkStatus,
 } from './types';
-import { INITIAL_BOOKMARKS, STANDARD_CATEGORIES } from './mockData';
+import { STANDARD_CATEGORIES } from './mockData';
 import {
   saveVideoToFirestore,
   updateVideoInFirestore,
@@ -115,6 +116,11 @@ export default function App() {
 
   // Active Category filter
   const [activeCategory, setActiveCategory] = useState<string>('전체');
+
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformFilter>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrderType>('latest');
 
   // Custom User Categories (Added by user via modal)
   const [userCategories, setUserCategories] = useState<string[]>(() => {
@@ -226,6 +232,17 @@ export default function App() {
 
   // Loading state for link saving & AI classification
   const [isLoading, setIsLoading] = useState(false);
+  const saveAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Stop / Cancel in-flight AI analysis & link saving
+  const handleCancelSave = () => {
+    if (saveAbortControllerRef.current) {
+      saveAbortControllerRef.current.abort();
+      saveAbortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    showToast('AI 분석 및 저장이 취소되었습니다.');
+  };
 
   // Highlight recently added item
   const [recentAddedId, setRecentAddedId] = useState<string | null>(null);
@@ -380,6 +397,7 @@ export default function App() {
     }
   }, [bookmarks, user.isLoggedIn]);
 
+
   // Save trash to localStorage & purge expired items (> 30 days) only when logged in
   useEffect(() => {
     if (!user.isLoggedIn) return;
@@ -520,7 +538,6 @@ export default function App() {
   }, [user.uid, showToast]);
 
 
-  // Derived list of all available categories
   // 1. '전체' is always first
   // 2. STANDARD_CATEGORIES (minus deleted categories)
   // 3. userCategories (added by user)
@@ -564,16 +581,112 @@ export default function App() {
     return list;
   }, [bookmarks, userCategories, deletedCategories, user.isLoggedIn]);
 
-  // Filtered bookmarks based on activeCategory
+  // Self-heal Instagram bookmarks that missed thumbnail or were misclassified into '게임' due to earlier regex bug
+  const healedVideosRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user.isLoggedIn || bookmarks.length === 0) return;
+
+    const needsFix = bookmarks.filter(
+      (b) =>
+        b.url &&
+        b.url.includes('instagram.com') &&
+        !healedVideosRef.current.has(b.id) &&
+        (!b.thumbnail || b.category === '게임' || b.title.startsWith('인스타그램 릴스 ('))
+    );
+
+    if (needsFix.length === 0) return;
+
+    needsFix.forEach(async (b) => {
+      healedVideosRef.current.add(b.id);
+      try {
+        const res = await fetch('/api/extract-and-classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: b.url,
+            excludedCategories: deletedCategories,
+            existingCategories: categories,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const updates: Partial<VideoBookmark> = {};
+          if (data.thumbnail && data.thumbnail !== b.thumbnail) {
+            updates.thumbnail = data.thumbnail;
+          }
+          if (data.title && data.title !== b.title && b.title.startsWith('인스타그램 릴스 (')) {
+            updates.title = data.title;
+          }
+          if (data.category && (b.category === '게임' || b.category === '미분류') && data.category !== '게임') {
+            updates.category = data.category;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            setBookmarks((prev) =>
+              prev.map((item) => (item.id === b.id ? { ...item, ...updates } : item))
+            );
+            updateVideoInFirestore(b.id, updates).catch(() => {});
+          }
+        }
+      } catch {
+        // ignore
+      }
+    });
+  }, [user.isLoggedIn, bookmarks, categories, deletedCategories]);
+
+  // Filtered and sorted bookmarks based on activeCategory, selectedPlatform, searchQuery, and sortOrder
   const filteredBookmarks = useMemo(() => {
     if (!user.isLoggedIn) {
       return [];
     }
-    if (activeCategory === '전체') {
-      return bookmarks;
+    let list = [...bookmarks];
+
+    // 1. Category filter
+    if (activeCategory !== '전체') {
+      list = list.filter((b) => b.category === activeCategory);
     }
-    return bookmarks.filter((b) => b.category === activeCategory);
-  }, [bookmarks, activeCategory, user.isLoggedIn]);
+
+    // 2. Platform filter
+    if (selectedPlatform !== 'all') {
+      list = list.filter((b) => {
+        const source = (b.source || '').toLowerCase();
+        const urlLower = (b.url || '').toLowerCase();
+        if (selectedPlatform === 'youtube') {
+          return source === 'youtube' || urlLower.includes('youtube.com') || urlLower.includes('youtu.be');
+        }
+        if (selectedPlatform === 'instagram') {
+          return source === 'instagram' || urlLower.includes('instagram.com');
+        }
+        if (selectedPlatform === 'tiktok') {
+          return source === 'tiktok' || urlLower.includes('tiktok.com');
+        }
+        return true;
+      });
+    }
+
+    // 3. Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (b) =>
+          (b.title || '').toLowerCase().includes(q) ||
+          (b.category || '').toLowerCase().includes(q) ||
+          (b.url || '').toLowerCase().includes(q)
+      );
+    }
+
+    // 4. Sort order
+    if (sortOrder === 'oldest') {
+      list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    } else if (sortOrder === 'title') {
+      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else {
+      // 'latest' default
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }
+
+    return list;
+  }, [bookmarks, activeCategory, selectedPlatform, searchQuery, sortOrder, user.isLoggedIn]);
 
   // Add new category directly from CategoryChangeModal or anywhere
   const handleAddNewCategory = (newCat: string) => {
@@ -715,14 +828,17 @@ export default function App() {
       return;
     }
 
+    const abortController = new AbortController();
+    saveAbortControllerRef.current = abortController;
     setIsLoading(true);
+
     try {
       let title = defaultTitle || '';
       let thumbnail = '';
       let category = '';
       let source: VideoBookmark['source'] = 'web';
 
-      // Call Express server-side Gemini API
+      // Call Express server-side Gemini API with AbortSignal
       try {
         const response = await fetch('/api/extract-and-classify', {
           method: 'POST',
@@ -734,7 +850,14 @@ export default function App() {
             excludedCategories: deletedCategories,
             existingCategories: categories,
           }),
+          signal: abortController.signal,
         });
+
+        if (abortController.signal.aborted) {
+          const abortErr = new Error('USER_CANCELLED');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
 
         if (response.ok) {
           const data = await response.json();
@@ -743,8 +866,19 @@ export default function App() {
           if (data.category) category = data.category;
           if (data.source) source = data.source;
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || abortController.signal.aborted) {
+          const abortErr = new Error('USER_CANCELLED');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
         console.warn('Backend extract error, using client extraction fallback:', err);
+      }
+
+      if (abortController.signal.aborted) {
+        const abortErr = new Error('USER_CANCELLED');
+        abortErr.name = 'AbortError';
+        throw abortErr;
       }
 
       // Check YouTube thumbnail & title via client oEmbed if title is generic or missing
@@ -777,39 +911,58 @@ export default function App() {
         }
       }
 
-      if (!thumbnail) {
-        thumbnail =
-          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80';
+      // Source detection
+      if (url.includes('instagram.com')) {
+        source = 'instagram';
+      } else if (url.includes('tiktok.com')) {
+        source = 'tiktok';
+      } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        source = 'youtube';
+      }
+
+      // Check for generic or missing Instagram titles (e.g. login wall title "Instagram")
+      const isGenericIg =
+        !title ||
+        title.trim().toLowerCase() === 'instagram' ||
+        title.trim().toLowerCase().includes('login • instagram') ||
+        title.trim().toLowerCase().includes('instagram - login');
+
+      if (source === 'instagram' && isGenericIg) {
+        const igMatch = url.match(/instagram\.com\/(?:reel|reels|p|share\/reel)\/([A-Za-z0-9_-]+)/i);
+        const shortcode = igMatch ? igMatch[1] : null;
+        title = shortcode ? `인스타그램 릴스 (${shortcode})` : '인스타그램 릴스 비디오';
       }
 
       // Client title fallback if empty
       if (!title) {
-        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        if (source === 'youtube') {
           title = '유튜브 영상 콘텐츠';
-          source = 'youtube';
-        } else if (url.includes('instagram.com')) {
-          title = '인스타그램 릴스 트렌드 비디오';
-          source = 'instagram';
-        } else if (url.includes('tiktok.com')) {
+        } else if (source === 'instagram') {
+          title = '인스타그램 릴스 비디오';
+        } else if (source === 'tiktok') {
           title = '틱톡 인기 숏폼 영상';
-          source = 'tiktok';
         } else {
           title = '웹 저장 비디오';
         }
       }
 
-      // If category is still empty, default '라이프스타일', '기타', or '미분류', run smart semantic classifier
-      if (!category || category === '라이프스타일' || category === '기타' || category === '미분류') {
+      // If category is still empty, default '기타', or '미분류', run smart semantic classifier
+      if (!category || category === '기타' || category === '미분류') {
         const smartCat = classifyContentClientSide(title, url, thumbnail, deletedCategories, categories);
         if (smartCat && smartCat !== '기타' && smartCat !== '미분류') {
           category = smartCat;
-        } else if (!category || category === '기타') {
-          category = '미분류';
+        } else if (!deletedCategories.includes('예능/유머')) {
+          category = '예능/유머';
+        } else if (!deletedCategories.includes('라이프스타일')) {
+          category = '라이프스타일';
+        } else {
+          const fallback = categories.find((c) => c && c !== '전체' && c !== '미분류' && !deletedCategories.includes(c));
+          category = fallback || '예능/유머';
         }
       }
 
-      if (!category || category === '기타') {
-        category = '미분류';
+      if (!category || category === '기타' || category === '미분류') {
+        category = !deletedCategories.includes('예능/유머') ? '예능/유머' : '라이프스타일';
       }
 
       // If the AI classified this video into a completely new category, register it to userCategories so it appears in the tabs
@@ -826,7 +979,7 @@ export default function App() {
       const newBookmark: VideoBookmark = {
         id: newId,
         title,
-        thumbnail,
+        thumbnail: thumbnail || '',
         category,
         url,
         createdAt: Date.now(),
@@ -852,34 +1005,51 @@ export default function App() {
       showToast(toastMsg, category, () => {
         handleDeleteVideo(newBookmark);
       });
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || abortController.signal.aborted) {
+        console.log('Link analysis and saving was cancelled by the user.');
+        throw err;
+      }
       console.error('Failed to save link:', err);
       showToast('링크 저장 중 오류가 발생했습니다.');
+      throw err;
     } finally {
       setIsLoading(false);
+      saveAbortControllerRef.current = null;
     }
   };
 
-  // Category Change Handler
-  const handleConfirmCategoryChange = (videoId: string, newCategory: string) => {
-    const prevCategory = bookmarks.find((b) => b.id === videoId)?.category;
+  // Category and Title Change Handler
+  const handleConfirmCategoryChange = (videoId: string, newCategory: string, newTitle?: string) => {
+    const prevBookmark = bookmarks.find((b) => b.id === videoId);
     setBookmarks((prev) =>
-      prev.map((b) => (b.id === videoId ? { ...b, category: newCategory } : b))
+      prev.map((b) => {
+        if (b.id !== videoId) return b;
+        return {
+          ...b,
+          category: newCategory,
+          ...(newTitle && newTitle.trim().length > 0 ? { title: newTitle.trim() } : {}),
+        };
+      })
     );
 
     // Save to Firestore
-    updateVideoInFirestore(videoId, { category: newCategory }).catch((err) => {
+    const updates: Partial<VideoBookmark> = { category: newCategory };
+    if (newTitle && newTitle.trim().length > 0) updates.title = newTitle.trim();
+
+    updateVideoInFirestore(videoId, updates).catch((err) => {
       console.warn('Firestore category update error:', err);
     });
 
-    showToast(`'${newCategory}'(으)로 카테고리가 이동되었습니다`, undefined, () => {
-      if (prevCategory) {
+    showToast(`'${newCategory}'(으)로 수정되었습니다`, undefined, () => {
+      if (prevBookmark) {
         setBookmarks((prev) =>
-          prev.map((b) => (b.id === videoId ? { ...b, category: prevCategory } : b))
+          prev.map((b) => (b.id === videoId ? prevBookmark : b))
         );
-        updateVideoInFirestore(videoId, { category: prevCategory }).catch((err) =>
-          console.warn('Firestore undo update error:', err)
-        );
+        updateVideoInFirestore(videoId, {
+          category: prevBookmark.category,
+          title: prevBookmark.title,
+        }).catch((err) => console.warn('Firestore undo update error:', err));
       }
     });
   };
@@ -987,6 +1157,7 @@ export default function App() {
             {/* 영상 링크 입력 파트 */}
             <LinkInputArea
               onSaveLink={handleSaveLink}
+              onCancelSave={handleCancelSave}
               isLoading={isLoading}
               primaryColor={themeColor.hex}
               isLoggedIn={user.isLoggedIn}
@@ -1007,6 +1178,21 @@ export default function App() {
               onDeleteCategory={handleDeleteCategory}
             />
 
+            {/* 실시간 검색 및 플랫폼 필터, 정렬 바 */}
+            {user.isLoggedIn && bookmarks.length > 0 && (
+              <BookmarkSearchBar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                selectedPlatform={selectedPlatform}
+                onPlatformChange={setSelectedPlatform}
+                sortOrder={sortOrder}
+                onSortChange={setSortOrder}
+                totalCount={bookmarks.length}
+                filteredCount={filteredBookmarks.length}
+                primaryColor={themeColor.hex}
+              />
+            )}
+
             {/* 영상 카드 파트 */}
             <VideoCardList
               videos={user.isLoggedIn ? filteredBookmarks : []}
@@ -1014,9 +1200,12 @@ export default function App() {
               recentAddedId={recentAddedId}
               primaryColor={themeColor.hex}
               isLoggedIn={user.isLoggedIn}
+              searchQuery={searchQuery}
+              onClearSearch={() => setSearchQuery('')}
               onRequireAuth={() => setIsAuthOpen(true)}
               onChangeCategory={(video) => setVideoToChange(video)}
               onDeleteVideo={(video) => setVideoToDeleteConfirm(video)}
+              onShowToast={showToast}
             />
           </div>
         )}
@@ -1112,6 +1301,7 @@ export default function App() {
             onShowToast={(msg) => showToast(msg)}
           />
         )}
+
 
         {settingsSubPage === 'terms' && (
           <TermsDetailSubView

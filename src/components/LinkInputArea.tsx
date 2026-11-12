@@ -3,6 +3,7 @@ import { Loader2, LogIn, Lock } from 'lucide-react';
 
 interface LinkInputAreaProps {
   onSaveLink: (url: string) => Promise<void>;
+  onCancelSave?: () => void;
   isLoading: boolean;
   primaryColor?: string;
   isLoggedIn?: boolean;
@@ -19,6 +20,7 @@ const SAMPLE_LINKS = [
 
 export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
   onSaveLink,
+  onCancelSave,
   isLoading,
   primaryColor = '#5046e5',
   isLoggedIn = false,
@@ -26,6 +28,7 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
   onShowToast,
 }) => {
   const [url, setUrl] = useState('');
+  const isCancelledRef = React.useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +42,27 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
     }
 
     if (!url.trim() || isLoading) return;
-    await onSaveLink(url.trim());
-    setUrl('');
+    const targetUrl = url.trim();
+    isCancelledRef.current = false;
+    try {
+      await onSaveLink(targetUrl);
+      // Only clear if completed successfully and NOT cancelled
+      if (!isCancelledRef.current) {
+        setUrl('');
+      } else {
+        setUrl(targetUrl);
+      }
+    } catch {
+      // Keep url intact in input if error or cancelled so user never loses it
+      setUrl(targetUrl);
+    }
+  };
+
+  const handleCancel = () => {
+    isCancelledRef.current = true;
+    if (onCancelSave) {
+      onCancelSave();
+    }
   };
 
   const handlePasteClipboard = async () => {
@@ -122,41 +144,74 @@ export const LinkInputArea: React.FC<LinkInputAreaProps> = ({
           </button>
         </div>
 
-        {/* Save button */}
-        <button
-          type="submit"
-          disabled={isLoading || !url.trim()}
-          className="w-full text-white font-semibold text-sm py-3 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-sm hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          style={{ backgroundColor: primaryColor }}
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>AI 분석 및 자동 분류 중...</span>
-            </>
-          ) : !isLoggedIn ? (
-            <>
-              <LogIn className="w-4 h-4" />
-              <span>로그인하고 저장하기</span>
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-[19px]">bookmark</span>
-              <span>저장</span>
-            </>
-          )}
-        </button>
+        {/* Save button or Loading + Cancel controls */}
+        {isLoading ? (
+          <div className="w-full flex items-center gap-2">
+            {/* Loading Indicator Bar */}
+            <div
+              className="flex-1 text-white font-medium text-xs sm:text-sm py-3 px-3.5 rounded-xl flex items-center justify-center gap-2 shadow-xs select-none"
+              style={{ backgroundColor: primaryColor, opacity: 0.95 }}
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
+              <span className="truncate">AI 분석 및 자동 분류 중...</span>
+            </div>
+
+            {/* Stop / Cancel Button (Music player stop circle + square icon & 취소) */}
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs sm:text-sm transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
+              title="분석 중단 및 취소"
+              aria-label="분석 중단 및 취소"
+            >
+              <span
+                className="material-symbols-outlined text-[19px] text-red-600 leading-none select-none"
+                style={{ fontVariationSettings: "'FILL' 0, 'wght' 600" }}
+              >
+                stop_circle
+              </span>
+              <span>취소</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            type="submit"
+            disabled={!url.trim()}
+            className="w-full text-white font-semibold text-sm py-3 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-sm hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            style={{ backgroundColor: primaryColor }}
+          >
+            {!isLoggedIn ? (
+              <>
+                <LogIn className="w-4 h-4" />
+                <span>로그인하고 저장하기</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[19px]">bookmark</span>
+                <span>저장</span>
+              </>
+            )}
+          </button>
+        )}
       </form>
 
       {/* Guide text */}
       <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[#777587]">
         <span
           className="material-symbols-outlined text-[15px]"
-          style={{ color: primaryColor }}
+          style={{ color: isLoading ? '#ea580c' : primaryColor }}
         >
-          auto_awesome
+          {isLoading ? 'info' : 'auto_awesome'}
         </span>
-        <p className="text-xs leading-tight">AI가 링크를 분석하여 주제별로 자동 분류합니다</p>
+        <p className="text-xs leading-tight">
+          {isLoading ? (
+            <span className="text-amber-700 font-medium">
+              분석이 지연되거나 멈출 경우 우측 <b>[취소]</b> 버튼을 눌러 즉시 중단할 수 있습니다
+            </span>
+          ) : (
+            'AI가 링크를 분석하여 주제별로 자동 분류합니다'
+          )}
+        </p>
       </div>
 
       {/* Quick link tester chips */}

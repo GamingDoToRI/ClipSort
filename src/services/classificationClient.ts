@@ -13,25 +13,41 @@ export function classifyContentClientSide(
   excludedCategories: string[] = [],
   existingCategories: string[] = []
 ): string {
-  const text = `${title} ${url} ${thumbnail}`.toLowerCase();
+  // Extract clean text from title and url path (never include query parameters like fit=crop or thumbnail URLs)
+  let urlPath = '';
+  try {
+    const parsed = new URL(url);
+    urlPath = parsed.pathname;
+  } catch {
+    urlPath = url.split('?')[0] || '';
+  }
+
+  const cleanTitle = (title || '').trim();
+  const titleLower = cleanTitle.toLowerCase();
+  const text = `${titleLower} ${urlPath.toLowerCase()}`;
   const excluded = new Set(excludedCategories.map((c) => c.trim().toLowerCase()));
 
   // 1. 음식 (대분류: 맛집, 먹방, 부대찌개, 골목, 요리, 레시피, 카페, 베이커리 등 전반)
   if (
     !excluded.has('음식') &&
-    /(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기|cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating)/i.test(
+    (/(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기)/i.test(
       text
-    )
+    ) ||
+      /\b(cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating)\b/i.test(
+        titleLower
+      ))
   ) {
     return '음식';
   }
 
   // 2. 게임 (대분류: 롤, 배그, 발로란트, 오버워치, 마인크래프트, 피파, 로아, 메이플, 스타, 철권, 원신, 스팀, 콘솔, e스포츠, 공략 등)
+  // CRITICAL: 스타, 마크, 롤, 로아 등 짧은 단어가 '인스타그램', '파스타', '스타일', '워터마크' 등에 오분류되지 않도록 바운더리 검사
   if (
     !excluded.has('게임') &&
-    /(게임|겜|게이밍|롤|리그\s*오브\s*레전드|페이커|faker|쵸비|chovy|t1|lck|lpl|롤드컵|배그|배틀그라운드|pubg|오버워치|overwatch|발로란트|valorant|마인크래프트|마크|minecraft|피파|fifa|fc온라인|fc\s*online|메이플|메이플스토리|maplestory|로스트아크|로아|lostark|던파|던전앤파이터|스타|스타크래프트|starcraft|철권|tekken|원신|genshin|붕괴|스타레일|starrail|젤다|zelda|포켓몬|pokemon|팰월드|palworld|엘든링|elden\s*ring|다크소울|gta|디아블로|diablo|사이버펑크|cyberpunk|몬스터헌터|몬헌|monster\s*hunter|동물의숲|동숲|스위치|닌텐도|nintendo|switch|플스|플레이스테이션|playstation|ps5|ps4|엑박|xbox|스팀|steam|e스포츠|esports|프로게이머|gamer|gaming|gameplay|walkthrough|playthrough|공략|실황|보스전|퀘스트|치지직|트위치|인방|스트리머|침착맨|풍월량|우왁굳|괴물쥐|랄로|파카|도파|롤챔스|승급전|솔랭|칼바람|롤토체스|tft|매드무비|티어|템트리|빌드|게임플레이|게임방송)/i.test(
+    (/(게임|겜|게이밍|리그\s*오브\s*레전드|페이커|faker|쵸비|chovy|t1|lck|lpl|롤드컵|배그|배틀그라운드|pubg|오버워치|overwatch|발로란트|valorant|마인크래프트|피파|fifa|fc온라인|fc\s*online|메이플|메이플스토리|maplestory|로스트아크|던파|던전앤파이터|철권|tekken|원신|genshin|붕괴|스타레일|starrail|젤다|zelda|포켓몬|pokemon|팰월드|palworld|엘든링|elden\s*ring|다크소울|gta|디아블로|diablo|사이버펑크|cyberpunk|몬스터헌터|몬헌|monster\s*hunter|동물의숲|동숲|스위치|닌텐도|nintendo|switch|플스|플레이스테이션|playstation|ps5|ps4|엑박|xbox|스팀|steam|e스포츠|esports|프로게이머|gamer|gaming|gameplay|walkthrough|playthrough|공략|실황|보스전|퀘스트|치지직|트위치|인방|스트리머|침착맨|풍월량|우왁굳|괴물쥐|랄로|파카|도파|롤챔스|승급전|솔랭|칼바람|롤토체스|tft|매드무비|템트리|게임플레이|게임방송|스타크래프트|starcraft|스타[12]|스타\s*(리그|대전|경기|빨무)|(?<![가-힣a-zA-Z0-9])스타(?![가-힣a-zA-Z0-9])|(?<![가-힣a-zA-Z0-9])(롤|마크|로아|티어)(?![가-힣a-zA-Z0-9]))/i.test(
       text
-    )
+    ) ||
+      /\b(gamer|gaming|gameplay|esports|game)\b/i.test(titleLower))
   ) {
     return '게임';
   }
@@ -39,9 +55,12 @@ export function classifyContentClientSide(
   // 3. 운동 (대분류: 헬스, 홈트, 스트레칭 및 야구/축구/골프 등 모든 세부 스포츠 포괄)
   if (
     !excluded.has('운동') &&
-    /(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|배구|배드민턴|kbo|mlb|홈런|삼진|투수|타자|안타|workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|football|bodybuilding|exercise)/i.test(
+    (/(운동|헬스|홈트|피트니스|다이어트|스트레칭|근육|러닝|필라테스|요가|스쿼트|벌크업|체지방|복근|하체|상체|등운동|가슴운동|웨이트|스포츠|야구|축구|농구|골프|테니스|수영|배구|배드민턴|kbo|mlb|홈런|삼진|투수|타자|안타)/i.test(
       text
-    )
+    ) ||
+      /\b(workout|fitness|gym|health|diet|stretch|pilates|yoga|running|training|sports|soccer|baseball|football|bodybuilding|exercise)\b/i.test(
+        titleLower
+      ))
   ) {
     return '운동';
   }
@@ -49,19 +68,26 @@ export function classifyContentClientSide(
   // 4. 여행 (Travel / Tourism / Trip / Tour)
   if (
     !excluded.has('여행') &&
-    /(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|시티투어|호캉스|여권|패키지여행|travel|trip|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing|airline)/i.test(
+    (/(여행|도쿄|오사카|교토|후쿠오카|유럽|제주|호텔|항공|관광|명소|해외여행|국내여행|비행기|숙소|리조트|휴가|공항|맛집투어|시티투어|호캉스|여권|패키지여행)/i.test(
       text
-    )
+    ) ||
+      /\b(travel|trip|japan|tokyo|kyoto|osaka|hotel|flight|resort|vacation|sightseeing|airline)\b/i.test(
+        titleLower
+      ))
   ) {
     return '여행';
   }
 
-  // 4. 테크 (Tech / Gadgets / Programming / AI)
+  // 5. 테크 (Tech / Gadgets / Programming / AI)
+  // Short acronyms (it, ai, pc) MUST be tested with word boundaries on title, never matching raw URL params or query strings
   if (
     !excluded.has('테크') &&
-    /(테크|개발|맥북|아이폰|갤럭시|코딩|인공지능|ai|it|스마트폰|소프트웨어|하드웨어|리뷰|기기|전자기기|태블릿|아이패드|애플|삼성|컴퓨터|노트북|모니터|프로그래밍|gadget|tech|code|apple|samsung|macbook|iphone|galaxy|software|hardware|laptop|monitor|programming|developer)/i.test(
+    (/(테크|개발자|맥북|아이폰|갤럭시|코딩|인공지능|chatgpt|스마트폰|소프트웨어|하드웨어|리뷰|전자기기|태블릿|아이패드|애플|삼성|컴퓨터|노트북|모니터|프로그래밍)/i.test(
       text
-    )
+    ) ||
+      /\b(tech|technology|coding|programming|developer|software|hardware|laptop|monitor|gadget|iphone|galaxy|macbook|ipad|ai|it|pc)\b/i.test(
+        titleLower
+      ))
   ) {
     return '테크';
   }
@@ -144,9 +170,37 @@ export function classifyContentClientSide(
     return '라이프스타일';
   }
 
-  // If no category matched, classify as '미분류' (사용자 직접 분류 필요)
-  if (!excluded.has('미분류')) {
-    return '미분류';
+  // Active AI Heuristic Inference (Zero-Friction: Do NOT default to '미분류')
+  if (
+    !excluded.has('자기계발') &&
+    /(official|아카데미|데미|학원|스쿨|study|tips|career|job|mentoring|강의|노하우|꿀팁|정보)/i.test(text)
+  ) {
+    return '자기계발';
   }
-  return '미분류';
+
+  if (
+    !excluded.has('패션/뷰티') &&
+    /(outfit|look|style|hair|fashion|ootd|코디|패션|스타일)/i.test(text)
+  ) {
+    return '패션/뷰티';
+  }
+
+  if (
+    !excluded.has('음악/댄스') &&
+    /(dance|song|music|cover|idol|kpop|sound|노래|댄스|안무|음악)/i.test(text)
+  ) {
+    return '음악/댄스';
+  }
+
+  // Shortform video default: Overwhelmingly Entertainment/Humor or Lifestyle
+  if (url.includes('instagram.com') || url.includes('tiktok.com')) {
+    if (!excluded.has('예능/유머')) return '예능/유머';
+    if (!excluded.has('라이프스타일')) return '라이프스타일';
+  }
+
+  if (!excluded.has('예능/유머')) return '예능/유머';
+  if (!excluded.has('라이프스타일')) return '라이프스타일';
+
+  const firstValid = existingCategories.find((c) => c && c !== '전체' && c !== '미분류' && !excluded.has(c));
+  return firstValid || '예능/유머';
 }

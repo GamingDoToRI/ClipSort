@@ -17,7 +17,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [imageLoaded, setImageLoaded] = useState(true);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -28,7 +27,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   useEffect(() => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
-    setImageLoaded(true);
   }, [imageSrc]);
 
   // Touch and Mouse drag handlers
@@ -149,7 +147,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
               ref={imgRef}
               src={imageSrc}
               alt="자르기 대상"
-              onLoad={() => setImageLoaded(true)}
               style={{
                 transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
                 transition: isDragging ? 'none' : 'transform 0.05s ease-out',

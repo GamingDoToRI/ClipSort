@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import {
   Download,
-  Share,
-  PlusSquare,
   X,
   CheckCircle2,
   ExternalLink,
@@ -240,10 +238,13 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                 </div>
                 <div className="text-[11px] text-amber-800 space-y-1">
                   <p>
-                    1. 브라우저 주소창 맨 오른쪽의 <strong>[설치 ⊕]</strong> 아이콘 클릭
+                    1. 브라우저 주소창 맨 오른쪽의 <strong>[설치 ⊕]</strong> 아이콘이 있다면 클릭
                   </p>
                   <p>
-                    2. 또는 크롬 우측 상단 <strong>[점 3개 메뉴 ⋮] → [저장 및 공유] → [ClipSort 설치]</strong> 클릭
+                    2. 또는 크롬 우측 상단 <strong>[점 3개 메뉴 ⋮] → [저장 및 공유] → [페이지를 앱으로 설치...]</strong> 클릭
+                  </p>
+                  <p className="text-[10px] text-amber-700 pt-0.5">
+                    💡 '페이지를 앱으로 설치'를 누르면 바탕화면에 ClipSort 전용 앱 아이콘이 생성됩니다.
                   </p>
                 </div>
               </div>

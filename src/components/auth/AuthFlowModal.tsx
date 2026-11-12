@@ -2,13 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   ArrowLeft,
-  Check,
   ChevronRight,
   Eye,
   EyeOff,
   Shield,
   RotateCw,
-  MoreVertical,
   CheckCircle2,
   XCircle,
 } from 'lucide-react';

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ExternalLink, Edit3, Trash2, Film } from 'lucide-react';
+import { ExternalLink, Edit3, Trash2, Film, Copy, Check } from 'lucide-react';
 import { VideoBookmark } from '../types';
 
 interface VideoCardProps {
@@ -8,6 +8,7 @@ interface VideoCardProps {
   primaryColor?: string;
   onChangeCategory: (video: VideoBookmark) => void;
   onDeleteVideo?: (video: VideoBookmark) => void;
+  onShowToast?: (msg: string) => void;
 }
 
 export const VideoCard: React.FC<VideoCardProps> = ({
@@ -16,12 +17,26 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   primaryColor = '#5046e5',
   onChangeCategory,
   onDeleteVideo,
+  onShowToast,
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleOpenLink = () => {
     if (video.url) {
       window.open(video.url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleCopyLink = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(video.url);
+      setIsCopied(true);
+      if (onShowToast) onShowToast('영상 링크가 클립보드에 복사되었습니다!');
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      if (onShowToast) onShowToast('링크 복사 권한이 필요합니다.');
     }
   };
 
@@ -39,6 +54,27 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     }
   };
 
+  const isInstagram = video.source === 'instagram' || video.url.includes('instagram.com');
+  const isTikTok = video.source === 'tiktok' || video.url.includes('tiktok.com');
+
+  const displayTitle =
+    isInstagram && (video.title === 'Instagram' || video.title.toLowerCase() === 'instagram')
+      ? (() => {
+          const match = video.url.match(/instagram\.com\/(?:reel|reels|p|share\/reel)\/([A-Za-z0-9_-]+)/i);
+          return match ? `인스타그램 릴스 (${match[1]})` : '인스타그램 릴스 비디오';
+        })()
+      : video.title;
+
+  const isCdnImage =
+    video.thumbnail &&
+    (video.thumbnail.includes('cdninstagram.com') ||
+      video.thumbnail.includes('fbcdn.net') ||
+      video.thumbnail.includes('tiktokcdn.com'));
+
+  const resolvedThumbnailSrc = isCdnImage
+    ? `/api/image-proxy?url=${encodeURIComponent(video.thumbnail)}`
+    : video.thumbnail;
+
   return (
     <article
       className={`group bg-white rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col ${
@@ -53,14 +89,37 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         className="relative w-full aspect-video bg-[#eaedff] cursor-pointer overflow-hidden"
         title="클릭하여 원본 영상으로 이동"
       >
-        {video.thumbnail && !imgError ? (
+        {resolvedThumbnailSrc && !imgError && !resolvedThumbnailSrc.includes('unsplash.com') ? (
           <img
-            src={video.thumbnail}
+            src={resolvedThumbnailSrc}
             alt={video.title}
+            referrerPolicy="no-referrer"
             onError={() => setImgError(true)}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
           />
+        ) : isInstagram ? (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-[#833ab4] via-[#fd1d1d] to-[#fcb045] text-white p-4 relative overflow-hidden select-none">
+            <div className="absolute -top-8 -right-8 w-28 h-28 bg-white/15 rounded-full blur-lg pointer-events-none" />
+            <div className="absolute -bottom-8 -left-8 w-28 h-28 bg-black/15 rounded-full blur-lg pointer-events-none" />
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-md mb-1.5 border border-white/30">
+              <span className="material-symbols-outlined text-[24px] text-white">movie</span>
+            </div>
+            <span className="text-xs font-black tracking-wide drop-shadow-xs uppercase">Instagram Reel</span>
+            <span className="text-[11px] text-white/90 font-medium mt-0.5 max-w-[85%] truncate text-center">
+              {video.title}
+            </span>
+          </div>
+        ) : isTikTok ? (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#010101] via-[#111111] to-[#1a1a2e] text-white p-4 relative overflow-hidden select-none">
+            <div className="w-11 h-11 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center shadow-md mb-1.5 border border-white/20">
+              <span className="material-symbols-outlined text-[24px] text-[#25F4EE]">music_video</span>
+            </div>
+            <span className="text-xs font-black tracking-wide drop-shadow-xs uppercase text-white">TikTok Short</span>
+            <span className="text-[11px] text-gray-300 font-medium mt-0.5 max-w-[85%] truncate text-center">
+              {video.title}
+            </span>
+          </div>
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#eaedff] to-[#dae2fd] text-[#5046e5]">
             <Film className="w-8 h-8 opacity-60 mb-1" />
@@ -95,13 +154,31 @@ export const VideoCard: React.FC<VideoCardProps> = ({
 
       {/* Content */}
       <div className="p-4 flex-1 flex flex-col justify-between gap-2.5">
-        {/* Source metadata row (YouTube / Instagram) + Saved Time */}
+        {/* Source metadata row (YouTube / Instagram / TikTok) + Saved Time */}
         <div className="flex items-center justify-between text-xs text-[#777587]">
           <div className="flex items-center gap-1.5 font-medium">
-            <span className="material-symbols-outlined text-[15px] text-red-500">
-              smart_display
-            </span>
-            <span>{video.source === 'instagram' ? 'Instagram' : 'YouTube'}</span>
+            {isInstagram ? (
+              <>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white shadow-xs">
+                  IG
+                </span>
+                <span className="font-bold text-[#e1306c]">Instagram Reel</span>
+              </>
+            ) : isTikTok ? (
+              <>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-black text-white shadow-xs">
+                  TT
+                </span>
+                <span className="font-bold text-black">TikTok</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[15px] text-red-500">
+                  smart_display
+                </span>
+                <span className="font-bold text-red-600">YouTube</span>
+              </>
+            )}
           </div>
           <span className="text-[11px] text-[#8e8ca0]" title="저장된 시점">
             {formatSavedTime(video.createdAt)}
@@ -112,9 +189,9 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         <h3
           onClick={handleOpenLink}
           className="text-sm sm:text-base font-semibold text-[#131b2e] leading-snug line-clamp-2 cursor-pointer hover:text-[#5046e5] transition-colors"
-          title={video.title}
+          title={displayTitle}
         >
-          {video.title}
+          {displayTitle}
         </h3>
 
         {/* Video Link URL bar */}
@@ -122,13 +199,13 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           {video.url}
         </div>
 
-        {/* Bottom row: Category Tag & Change Button + Delete Button */}
+        {/* Bottom row: Category Tag & Quick Action Buttons */}
         <div className="pt-2 border-t border-[#f2f3ff] flex items-center justify-between gap-2">
           {/* Assigned Category Name */}
           <div className="flex items-center gap-1.5 min-w-0">
             {video.category === '미분류' ? (
               <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-xs"
                 title="카테고리가 분류되지 않았습니다. 카테고리 변경 버튼을 눌러 지정해주세요."
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -144,8 +221,29 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             )}
           </div>
 
-          {/* Action Buttons: Category Change & Delete */}
+          {/* Action Buttons: Quick Copy Link, Category Change, Delete */}
           <div className="flex items-center gap-1.5 flex-shrink-0 relative">
+            {/* Quick Copy Link Button */}
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-[#464555] hover:bg-[#f2f3ff] border border-[#dae2fd]/60 transition-colors cursor-pointer"
+              title="링크 복사"
+              aria-label="링크 복사"
+            >
+              {isCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-[11px] text-emerald-600 font-bold hidden sm:inline">복사됨</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-[#777587]" />
+                  <span className="text-[11px] hidden sm:inline">복사</span>
+                </>
+              )}
+            </button>
+
             {/* Category Change Button */}
             <button
               type="button"
@@ -173,12 +271,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                   e.stopPropagation();
                   onDeleteVideo(video);
                 }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#777587] hover:text-[#ba1a1a] hover:bg-[#fff0f0] border border-[#dae2fd]/60 hover:border-[#ffdad6] transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-[#777587] hover:text-[#ba1a1a] hover:bg-[#fff0f0] border border-[#dae2fd]/60 hover:border-[#ffdad6] transition-colors cursor-pointer"
                 title="휴지통으로 이동"
                 aria-label="삭제"
               >
                 <Trash2 className="w-3.5 h-3.5 text-[#ba1a1a]" />
-                <span className="text-[#ba1a1a]">삭제</span>
               </button>
             )}
           </div>
