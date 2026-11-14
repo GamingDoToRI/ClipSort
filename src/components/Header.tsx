@@ -18,17 +18,11 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
         {/* Brand Zone */}
         <div className="flex items-center gap-2">
-          <div
-            className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center shadow-xs"
-            style={{ color: primaryColor }}
-          >
-            <span
-              className="material-symbols-outlined text-[20px]"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
-          </div>
+          <img
+            src="/icon.svg"
+            alt="ClipSort 로고"
+            className="w-8 h-8 rounded-lg shadow-xs object-cover shrink-0"
+          />
           <span className="text-xl font-bold tracking-tight text-[#131b2e]">
             ClipSort
           </span>

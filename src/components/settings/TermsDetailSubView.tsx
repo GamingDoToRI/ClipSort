@@ -1,4 +1,5 @@
 import React from 'react';
+import { SITE_CONFIG } from '../../config/siteConfig';
 
 interface TermsDetailSubViewProps {
   onBack: () => void;
@@ -55,7 +56,7 @@ export const TermsDetailSubView: React.FC<TermsDetailSubViewProps> = ({
             </div>
           </div>
           <div className="inline-flex items-center px-2.5 py-1 bg-[#eaedff] rounded-full">
-            <span className="text-[11px] font-semibold text-[#5046e5]">시행: 2025.01.01</span>
+            <span className="text-[11px] font-semibold text-[#5046e5]">시행: {SITE_CONFIG.policyEffectiveDate}</span>
           </div>
         </div>
 
@@ -180,10 +181,10 @@ export const TermsDetailSubView: React.FC<TermsDetailSubViewProps> = ({
 
           {/* Document Footer Meta */}
           <div className="pt-4 pb-1 flex flex-col gap-1 text-[11px] text-[#777587]">
-            <span>공고일자: 2024년 12월 24일</span>
-            <span>시행일자: 2025년 1월 1일</span>
+            <span>공고일자: {SITE_CONFIG.policyNoticeDate}</span>
+            <span>시행일자: {SITE_CONFIG.policyEffectiveDateKo}</span>
             <p className="pt-2 text-[#777587]">
-              약관 내용에 관한 문의사항은 ClipSort 고객지원센터(support@clipsort.app)로 접수해주시기 바랍니다.
+              약관 내용에 관한 문의사항은 ClipSort 고객지원센터({SITE_CONFIG.operatorEmail})로 접수해 주시기 바랍니다.
             </p>
           </div>
         </article>

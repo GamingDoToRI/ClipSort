@@ -1,25 +1,35 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { SITE_CONFIG } from '../../config/siteConfig';
 
 interface ContactSubViewProps {
   onBack: () => void;
   onShowToast: (msg: string) => void;
+  defaultEmail?: string;
 }
 
 export const ContactSubView: React.FC<ContactSubViewProps> = ({
   onBack,
   onShowToast,
+  defaultEmail = '',
 }) => {
   const [inquiryType, setInquiryType] = useState<'bug' | 'feature' | 'ai' | 'other'>('bug');
-  const [userEmail, setUserEmail] = useState('user@example.com');
+  const [userEmail, setUserEmail] = useState(defaultEmail);
   const [inquiryBody, setInquiryBody] = useState('');
   const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (defaultEmail && !userEmail) {
+      setUserEmail(defaultEmail);
+    }
+  }, [defaultEmail, userEmail]);
+
   const handleCopyEmail = () => {
-    navigator.clipboard?.writeText('support@clipsort.app');
-    onShowToast('이메일 주소(support@clipsort.app)가 복사되었습니다');
+    navigator.clipboard?.writeText(SITE_CONFIG.operatorEmail);
+    onShowToast(`이메일 주소(${SITE_CONFIG.operatorEmail})가 복사되었습니다`);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,18 +64,53 @@ export const ContactSubView: React.FC<ContactSubViewProps> = ({
     setAttachedImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inquiryBody.trim()) {
-      onShowToast('문의 내용을 입력해 주세요.');
+    if (isSubmitting) return;
+
+    if (!userEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail.trim())) {
+      onShowToast('답변 받으실 올바른 이메일 주소를 입력해 주세요.');
       return;
     }
-    onShowToast('문의가 개발팀으로 성공적으로 전송되었습니다.');
-    setInquiryBody('');
-    setAttachedImages([]);
-    setTimeout(() => {
-      onBack();
-    }, 1200);
+
+    if (!inquiryBody.trim() || inquiryBody.trim().length < 5) {
+      onShowToast('문의 내용을 5자 이상 입력해 주세요.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/contact-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inquiryType,
+          replyEmail: userEmail.trim(),
+          message: inquiryBody.trim(),
+          includeDiagnostics,
+          appVersion: SITE_CONFIG.appVersion,
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          attachments: attachedImages,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        onShowToast(data?.error || '문의 접수에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+
+      onShowToast('문의가 운영팀으로 성공적으로 접수되었습니다.');
+      setInquiryBody('');
+      setAttachedImages([]);
+      setTimeout(() => {
+        onBack();
+      }, 1200);
+    } catch {
+      onShowToast(`네트워크 오류가 발생했습니다. ${SITE_CONFIG.operatorEmail}로 직접 문의해 주세요.`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -108,7 +153,7 @@ export const ContactSubView: React.FC<ContactSubViewProps> = ({
                 alternate_email
               </span>
               <span className="text-xs font-semibold text-[#131b2e] select-all truncate">
-                support@clipsort.app
+                {SITE_CONFIG.operatorEmail}
               </span>
             </div>
             <button
@@ -215,8 +260,9 @@ export const ContactSubView: React.FC<ContactSubViewProps> = ({
               type="email"
               value={userEmail}
               onChange={(e) => setUserEmail(e.target.value)}
+              placeholder="답변 받으실 이메일을 입력해 주세요"
               required
-              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#dae2fd] text-xs text-[#131b2e] focus:outline-none focus:border-[#5046e5]"
+              className="w-full h-11 px-3.5 rounded-xl bg-white border border-[#dae2fd] text-xs text-[#131b2e] placeholder-[#777587] focus:outline-none focus:border-[#5046e5]"
             />
           </div>
 
@@ -301,10 +347,13 @@ export const ContactSubView: React.FC<ContactSubViewProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-3.5 rounded-xl bg-[#5046e5] hover:bg-[#3625cd] text-white font-bold text-sm shadow-md flex items-center justify-center space-x-2 active:scale-98 transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full py-3.5 rounded-xl bg-[#5046e5] hover:bg-[#3625cd] disabled:opacity-60 text-white font-bold text-sm shadow-md flex items-center justify-center space-x-2 active:scale-98 transition-all cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[19px]">send</span>
-              <span>문의 보내기</span>
+              <span className="material-symbols-outlined text-[19px]">
+                {isSubmitting ? 'hourglass_top' : 'send'}
+              </span>
+              <span>{isSubmitting ? '문의 접수 중...' : '문의 보내기'}</span>
             </button>
           </div>
         </form>

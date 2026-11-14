@@ -38,5 +38,19 @@ service cloud.firestore {
     match /_system_email_verifications/{docId} {
       allow read, write: if false;
     }
+
+    // Customer support inquiries collection (Strictly server-side access only via Admin SDK)
+    match /inquiries/{docId} {
+      allow read, write: if false;
+    }
+
+    // Account unification & linking tables (Strictly server-side access only via Admin SDK)
+    match /account_links/{uid} {
+      allow read, write: if false;
+    }
+
+    match /user_accounts/{uid} {
+      allow read, write: if false;
+    }
   }
 }

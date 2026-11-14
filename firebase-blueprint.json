@@ -49,12 +49,108 @@
         }
       },
       "required": ["id", "url", "title", "category", "createdAt", "status"]
+    },
+    "ContactInquiry": {
+      "title": "ContactInquiry",
+      "description": "Customer support inquiry submitted from ContactSubView and processed server-side",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique inquiry document ID"
+        },
+        "inquiryType": {
+          "type": "string",
+          "enum": ["bug", "feature", "ai", "other"]
+        },
+        "replyEmail": {
+          "type": "string",
+          "description": "User email to reply to"
+        },
+        "message": {
+          "type": "string",
+          "description": "Inquiry content"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["received", "resolved"]
+        }
+      },
+      "required": ["id", "inquiryType", "replyEmail", "message", "createdAt", "status"]
+    },
+    "AccountLink": {
+      "title": "AccountLink",
+      "description": "Maps a secondary Firebase UID (e.g. Google or Email) to a primary unified Master UID (Kakao-first)",
+      "type": "object",
+      "properties": {
+        "masterUid": {
+          "type": "string",
+          "description": "Unified master Firebase Auth UID"
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["kakao", "google", "email"]
+        },
+        "email": {
+          "type": "string",
+          "description": "Email associated with the secondary account"
+        },
+        "linkedAt": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds"
+        }
+      },
+      "required": ["masterUid", "provider", "linkedAt"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Unified user account metadata storing linked providers and resolved contact emails",
+      "type": "object",
+      "properties": {
+        "masterUid": {
+          "type": "string",
+          "description": "Primary unified Firebase Auth UID"
+        },
+        "primaryProvider": {
+          "type": "string",
+          "enum": ["kakao", "google", "email"]
+        },
+        "kakaoEmail": {
+          "type": "string"
+        },
+        "googleEmail": {
+          "type": "string"
+        },
+        "emailAddress": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["masterUid", "primaryProvider", "updatedAt"]
     }
   },
   "firestore": {
     "/videos/{videoId}": {
       "schema": "VideoBookmark",
       "description": "Saved video bookmarks collection managed by ClipSort"
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": "ContactInquiry",
+      "description": "Server-only customer inquiries collection written by Admin SDK"
+    },
+    "/account_links/{uid}": {
+      "schema": "AccountLink",
+      "description": "Server-only mapping from secondary UIDs to primary unified UID"
+    },
+    "/user_accounts/{uid}": {
+      "schema": "UserAccount",
+      "description": "Server-only metadata for unified multi-provider accounts"
     }
   }
 }

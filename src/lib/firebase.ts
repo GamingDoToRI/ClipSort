@@ -5,6 +5,8 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCustomToken,
+  updateProfile,
   signOut,
   onAuthStateChanged,
   type User as FirebaseUser,
@@ -31,6 +33,13 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+// Secondary Auth instance for verifying a second account during account linking without logging out the active session
+export function getSecondaryAuth() {
+  const existing = getApps().find((a) => a.name === 'clipsort-linker');
+  const linkerApp = existing || initializeApp(firebaseConfig, 'clipsort-linker');
+  return getAuth(linkerApp);
+}
+
 // Initialize Firestore with configured databaseId
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
 
@@ -51,6 +60,8 @@ export async function testFirestoreConnection(): Promise<boolean> {
 export {
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCustomToken,
+  updateProfile,
   signOut,
   onAuthStateChanged,
 };

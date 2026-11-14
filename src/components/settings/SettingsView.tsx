@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile, SettingsSubPage, DisplayMode } from '../../types';
+import { SITE_CONFIG } from '../../config/siteConfig';
 import { LogIn, User } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -58,14 +59,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {/* Avatar with ClipSort Indigo accent gradient */}
                   <div className="relative w-12 h-12 rounded-full bg-gradient-to-tr from-[#5046e5] to-[#57dffe] p-0.5 flex items-center justify-center flex-shrink-0 shadow-sm">
                     <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center overflow-hidden">
-                      <div className="w-9 h-9 rounded-full bg-[#5046e5]/10 flex items-center justify-center text-[#5046e5]">
-                        <span
-                          className="material-symbols-outlined text-[24px]"
-                          style={{ fontVariationSettings: "'FILL' 1" }}
-                        >
-                          account_circle
-                        </span>
-                      </div>
+                      {user.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.nickname}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-[#5046e5]/10 flex items-center justify-center text-[#5046e5]">
+                          <span
+                            className="material-symbols-outlined text-[24px]"
+                            style={{ fontVariationSettings: "'FILL' 1" }}
+                          >
+                            account_circle
+                          </span>
+                        </div>
+                      )}
                     </div>
                     {/* Mini status pip */}
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#5046e5] border-2 border-white rounded-full" />
@@ -77,7 +86,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-[#777587]">
-                      {user.email || '@clipsort_user'}
+                      {user.email || (user.provider === 'kakao' ? '카카오 계정 연동됨' : '이메일 미등록')}
                     </p>
                   </div>
                 </div>
@@ -323,7 +332,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span className="text-sm font-medium text-[#131b2e]">버전 정보</span>
               </div>
               <div className="flex items-center space-x-1 text-[#777587]">
-                <span className="text-sm">v1.2.0 (최신)</span>
+                <span className="text-sm">v{SITE_CONFIG.appVersion} (최신)</span>
                 <span className="material-symbols-outlined text-[18px]">
                   chevron_right
                 </span>

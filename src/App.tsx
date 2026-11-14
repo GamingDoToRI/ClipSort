@@ -45,16 +45,30 @@ import {
 } from './services/videoFirestoreService';
 import {
   auth,
+  googleProvider,
+  signInWithPopup,
+  signInWithCustomToken,
+  getSecondaryAuth,
   signOut,
   onAuthStateChanged,
+  updateProfile,
   testFirestoreConnection,
 } from './lib/firebase';
 import { classifyContentClientSide } from './services/classificationClient';
+import { initAnalytics, trackEvent, trackTabView } from './lib/analytics';
 
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<MainTabType>('storage');
   const [settingsSubPage, setSettingsSubPage] = useState<SettingsSubPage>(null);
+
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
+    trackTabView(activeTab);
+  }, [activeTab]);
 
   // Theme & Display Mode State
   const [themeColor, setThemeColor] = useState<ThemeColorOption>(() => {
@@ -300,19 +314,85 @@ export default function App() {
     []
   );
 
+  const resolvingUidRef = useRef<string | null>(null);
+
   // Listen to Firebase Auth state changes for persistent login across page refreshes
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        setUser({
+        const provider =
+          fbUser.providerData[0]?.providerId === 'google.com'
+            ? 'google'
+            : fbUser.uid.startsWith('kakao_')
+            ? 'kakao'
+            : 'email';
+
+        let savedAvatar: string | undefined;
+        try {
+          savedAvatar = localStorage.getItem(`clipsort_avatar_${fbUser.uid}`) || undefined;
+        } catch {
+          // ignore
+        }
+
+        setUser((prev) => ({
           isLoggedIn: true,
           uid: fbUser.uid,
           nickname: fbUser.displayName || fbUser.email?.split('@')[0] || '클립사용자',
-          email: fbUser.email || '',
-          avatarUrl: fbUser.photoURL || undefined,
-          provider: fbUser.providerData[0]?.providerId === 'google.com' ? 'google' : 'email',
-        });
+          email: fbUser.email || (prev.uid === fbUser.uid ? prev.email : '') || '',
+          avatarUrl: savedAvatar || fbUser.photoURL || undefined,
+          provider,
+          linkedProviders: prev.uid === fbUser.uid ? prev.linkedProviders : undefined,
+          linkedEmails: prev.uid === fbUser.uid ? prev.linkedEmails : undefined,
+        }));
+
+        // Resolve unified Kakao-first session & linked provider metadata from server
+        if (resolvingUidRef.current !== fbUser.uid) {
+          resolvingUidRef.current = fbUser.uid;
+          try {
+            const idToken = await fbUser.getIdToken();
+            const res = await fetch('/api/auth/resolve-session', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({ idToken }),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+              if (data.redirected && data.switchCustomToken) {
+                resolvingUidRef.current = null;
+                await signInWithCustomToken(auth, data.switchCustomToken);
+                if (data.autoMerged) {
+                  showToast('동일 이메일 계정이 카카오 대표 계정으로 자동 통합되었습니다.');
+                }
+                return;
+              }
+              if (data.profile && auth.currentUser?.uid === fbUser.uid) {
+                const p = data.profile;
+                setUser((prev) => ({
+                  ...prev,
+                  isLoggedIn: true,
+                  uid: fbUser.uid,
+                  nickname: p.nickname || prev.nickname,
+                  email: p.email || prev.email,
+                  avatarUrl: savedAvatar || p.avatarUrl || prev.avatarUrl,
+                  provider: p.provider || prev.provider,
+                  linkedProviders: p.linkedProviders || prev.linkedProviders,
+                  linkedEmails: p.linkedEmails || prev.linkedEmails,
+                }));
+              }
+            }
+          } catch (resolveErr) {
+            console.warn('Session resolution check warning:', resolveErr);
+          } finally {
+            if (resolvingUidRef.current === fbUser.uid) {
+              resolvingUidRef.current = null;
+            }
+          }
+        }
       } else {
+        resolvingUidRef.current = null;
         setUser({
           isLoggedIn: false,
           nickname: '게스트',
@@ -323,7 +403,7 @@ export default function App() {
     });
 
     return () => unsubscribeAuth();
-  }, []);
+  }, [showToast]);
 
   // Validate Firestore connection on boot and sync bookmarks when logged in
   useEffect(() => {
@@ -536,6 +616,185 @@ export default function App() {
       throw err;
     }
   }, [user.uid, showToast]);
+
+  // Link & merge a Google account into the active unified account (Kakao remains Primary UID)
+  const handleLinkGoogleAccount = useCallback(async () => {
+    if (!auth.currentUser) {
+      showToast('로그인 후 계정을 연결할 수 있습니다.');
+      return;
+    }
+
+    const secondaryAuth = getSecondaryAuth();
+    try {
+      const currentIdToken = await auth.currentUser.getIdToken(true);
+      const googleCred = await signInWithPopup(secondaryAuth, googleProvider);
+      const linkingIdToken = await googleCred.user.getIdToken(true);
+      await signOut(secondaryAuth).catch(() => {});
+
+      const res = await fetch('/api/auth/merge-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentIdToken}`,
+        },
+        body: JSON.stringify({ currentIdToken, linkingIdToken }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showToast(data?.error || 'Google 계정 연결에 실패했습니다.');
+        return;
+      }
+
+      if (data.switchedFromSecondary && data.customToken) {
+        await signInWithCustomToken(auth, data.customToken);
+      }
+
+      if (data.profile) {
+        setUser((prev) => ({
+          ...prev,
+          isLoggedIn: true,
+          uid: data.profile.uid || prev.uid,
+          nickname: data.profile.nickname || prev.nickname,
+          email: data.profile.email || prev.email,
+          avatarUrl: prev.avatarUrl || data.profile.avatarUrl,
+          provider: data.profile.provider || prev.provider,
+          linkedProviders: data.profile.linkedProviders || prev.linkedProviders,
+          linkedEmails: data.profile.linkedEmails || prev.linkedEmails,
+        }));
+      }
+
+      showToast(data.message || 'Google 계정이 성공적으로 연결·병합되었습니다.');
+    } catch (err: any) {
+      await signOut(secondaryAuth).catch(() => {});
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (err?.code === 'auth/popup-blocked') {
+        showToast('팝업 차단이 활성화되어 있습니다. 브라우저 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      console.error('Google account link error:', err);
+      showToast(err?.message || 'Google 계정 연결 중 오류가 발생했습니다.');
+    }
+  }, [showToast]);
+
+  // Link & merge a Kakao account (always promotes Kakao UID to Primary/Master account)
+  const handleLinkKakaoAccount = useCallback(async () => {
+    if (!auth.currentUser) {
+      showToast('로그인 후 계정을 연결할 수 있습니다.');
+      return;
+    }
+
+    const popup = window.open(
+      'about:blank',
+      'kakao_link_popup',
+      'width=500,height=680,scrollbars=yes,resizable=yes'
+    );
+    if (!popup) {
+      showToast('팝업 차단이 활성화되어 있습니다. 브라우저 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+      return;
+    }
+
+    const secondaryAuth = getSecondaryAuth();
+    try {
+      const currentIdToken = await auth.currentUser.getIdToken(true);
+      const urlRes = await fetch('/api/auth/kakao/url');
+      const urlData = await urlRes.json().catch(() => null);
+      if (!urlRes.ok || !urlData?.success || !urlData?.url) {
+        popup.close();
+        showToast(urlData?.error || '카카오 로그인 설정을 불러오지 못했습니다.');
+        return;
+      }
+
+      popup.location.href = urlData.url;
+
+      const oauthResult = await new Promise<{ customToken: string }>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          window.removeEventListener('message', onMessage);
+          clearInterval(closedTimer);
+        };
+
+        const onMessage = (event: MessageEvent) => {
+          const origin = event.origin || '';
+          const isTrusted =
+            origin === window.location.origin ||
+            origin.endsWith('.run.app') ||
+            origin.includes('localhost');
+          if (!isTrusted) return;
+
+          const payload = event.data;
+          if (!payload || typeof payload !== 'object') return;
+
+          if (payload.type === 'KAKAO_OAUTH_ERROR') {
+            settled = true;
+            cleanup();
+            reject(new Error(payload.error || '카카오 인증에 실패했습니다.'));
+          } else if (payload.type === 'KAKAO_OAUTH_SUCCESS' && payload.customToken) {
+            settled = true;
+            cleanup();
+            resolve({ customToken: payload.customToken });
+          }
+        };
+
+        const closedTimer = setInterval(() => {
+          if (popup.closed && !settled) {
+            settled = true;
+            cleanup();
+            reject(new Error('LINK_CANCELLED'));
+          }
+        }, 500);
+
+        window.addEventListener('message', onMessage);
+      });
+
+      const kakaoCred = await signInWithCustomToken(secondaryAuth, oauthResult.customToken);
+      const linkingIdToken = await kakaoCred.user.getIdToken(true);
+      await signOut(secondaryAuth).catch(() => {});
+
+      const mergeRes = await fetch('/api/auth/merge-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentIdToken}`,
+        },
+        body: JSON.stringify({ currentIdToken, linkingIdToken }),
+      });
+      const mergeData = await mergeRes.json().catch(() => null);
+      if (!mergeRes.ok || !mergeData?.success) {
+        showToast(mergeData?.error || '카카오 계정 연결 및 병합에 실패했습니다.');
+        return;
+      }
+
+      if (mergeData.customToken) {
+        await signInWithCustomToken(auth, mergeData.customToken);
+      }
+
+      if (mergeData.profile) {
+        setUser((prev) => ({
+          ...prev,
+          isLoggedIn: true,
+          uid: mergeData.profile.uid || prev.uid,
+          nickname: mergeData.profile.nickname || prev.nickname,
+          email: mergeData.profile.email || prev.email,
+          avatarUrl: prev.avatarUrl || mergeData.profile.avatarUrl,
+          provider: 'kakao',
+          linkedProviders: mergeData.profile.linkedProviders || ['kakao', prev.provider || 'google'],
+          linkedEmails: mergeData.profile.linkedEmails || prev.linkedEmails,
+        }));
+      }
+
+      showToast(mergeData.message || '카카오 대표 계정으로 통합·병합되었습니다.');
+    } catch (err: any) {
+      await signOut(secondaryAuth).catch(() => {});
+      if (!popup.closed) popup.close();
+      if (err?.message === 'LINK_CANCELLED') {
+        return;
+      }
+      console.error('Kakao account link error:', err);
+      showToast(err?.message || '카카오 계정 연결 중 오류가 발생했습니다.');
+    }
+  }, [showToast]);
 
 
   // 1. '전체' is always first
@@ -996,6 +1255,10 @@ export default function App() {
 
       setBookmarks((prev) => [newBookmark, ...prev]);
       setRecentAddedId(newId);
+      trackEvent('save_bookmark', {
+        platform: source || 'web',
+        category,
+      });
 
       // Level 3 Floating Toast
       const toastMsg =
@@ -1244,7 +1507,10 @@ export default function App() {
             onOpenAuth={() => setIsAuthOpen(true)}
             onLogout={handleLogout}
             onShowToast={(msg) => showToast(msg)}
-            onOpenInstall={() => setIsPWAInstallOpen(true)}
+            onOpenInstall={() => {
+              setIsPWAInstallOpen(true);
+              trackEvent('pwa_install_open');
+            }}
           />
         )}
 
@@ -1257,7 +1523,20 @@ export default function App() {
             onOpenAuth={() => setIsAuthOpen(true)}
             onUpdateNickname={(newNick) => {
               setUser((prev) => ({ ...prev, nickname: newNick }));
+              if (auth.currentUser) {
+                updateProfile(auth.currentUser, { displayName: newNick }).catch(() => {});
+              }
               showToast('닉네임이 변경되었습니다.');
+            }}
+            onUpdateAvatar={(avatarUrl) => {
+              setUser((prev) => ({ ...prev, avatarUrl }));
+              try {
+                if (user.uid) {
+                  localStorage.setItem(`clipsort_avatar_${user.uid}`, avatarUrl);
+                }
+              } catch {
+                // ignore
+              }
             }}
             onShowToast={(msg) => showToast(msg)}
             onNavigateChangePassword={() => setSettingsSubPage('change_password')}
@@ -1266,6 +1545,8 @@ export default function App() {
               setSettingsSubPage(null);
             }}
             onDeleteAccount={handleDeleteAccount}
+            onLinkKakao={handleLinkKakaoAccount}
+            onLinkGoogle={handleLinkGoogleAccount}
           />
         )}
 
@@ -1325,6 +1606,7 @@ export default function App() {
           <ContactSubView
             onBack={() => setSettingsSubPage(null)}
             onShowToast={(msg) => showToast(msg)}
+            defaultEmail={user.isLoggedIn ? user.email : ''}
           />
         )}
 
@@ -1355,6 +1637,7 @@ export default function App() {
           } catch {
             // ignore
           }
+          trackEvent('login', { method: newProfile.provider || 'email' });
           showToast(`${newProfile.nickname}님 환영합니다!`);
         }}
       />

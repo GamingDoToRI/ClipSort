@@ -44,18 +44,30 @@ export async function handleDeleteAccount(req: any, res: any) {
       });
     }
 
-    // 1. Delete all user's video documents from Firestore if adminDb is available
+    // 1. Delete all user's video documents & account unification links from Firestore if adminDb is available
     let deletedDocsCount = 0;
     if (adminDb) {
       const snapshot = await adminDb.collection('videos').where('userId', '==', uid).get();
       if (!snapshot.empty) {
-        const batch = adminDb.batch();
-        snapshot.docs.forEach((doc) => {
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
+        for (let i = 0; i < snapshot.docs.length; i += 400) {
+          const batch = adminDb.batch();
+          snapshot.docs.slice(i, i + 400).forEach((doc) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+        }
         deletedDocsCount = snapshot.size;
       }
+
+      // Clean up any account_links pointing to this UID and user_accounts record
+      const linkedSnap = await adminDb.collection('account_links').where('masterUid', '==', uid).get();
+      if (!linkedSnap.empty) {
+        const batch = adminDb.batch();
+        linkedSnap.docs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+      await adminDb.collection('account_links').doc(uid).delete().catch(() => {});
+      await adminDb.collection('user_accounts').doc(uid).delete().catch(() => {});
     }
 
     // 2. Delete user account from Firebase Auth

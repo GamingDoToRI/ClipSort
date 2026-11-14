@@ -27,6 +27,12 @@ export interface UserProfile {
   email: string;
   avatarUrl?: string;
   provider?: 'email' | 'kakao' | 'google' | 'apple';
+  linkedProviders?: Array<'kakao' | 'google' | 'email'>;
+  linkedEmails?: {
+    kakao?: string;
+    google?: string;
+    email?: string;
+  };
 }
 
 export type MainTabType = 'storage' | 'recent' | 'trash' | 'settings';

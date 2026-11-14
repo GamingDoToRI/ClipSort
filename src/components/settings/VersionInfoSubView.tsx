@@ -1,4 +1,5 @@
 import React from 'react';
+import { SITE_CONFIG } from '../../config/siteConfig';
 
 interface VersionInfoSubViewProps {
   onBack: () => void;
@@ -30,15 +31,12 @@ export const VersionInfoSubView: React.FC<VersionInfoSubViewProps> = ({ onBack }
         {/* App Branding Hero Summary Card */}
         <section className="bg-white rounded-2xl p-6 flex flex-col items-center text-center shadow-xs border border-[#dae2fd]/60">
           <div className="relative w-18 h-18 rounded-2xl bg-gradient-to-tr from-[#5046e5] via-[#5046e5] to-[#57dffe] p-0.5 shadow-md mb-3">
-            <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center overflow-hidden">
-              <div className="w-11 h-11 rounded-xl bg-[#5046e5] text-white flex items-center justify-center shadow-inner">
-                <span
-                  className="material-symbols-outlined text-[26px]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  auto_awesome
-                </span>
-              </div>
+            <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center overflow-hidden p-1">
+              <img
+                src="/icon.svg"
+                alt="ClipSort 공식 아이콘"
+                className="w-full h-full rounded-xl object-cover"
+              />
             </div>
             <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#5046e5] text-white rounded-full flex items-center justify-center shadow-md">
               <span className="material-symbols-outlined text-[13px] font-bold">check</span>
@@ -50,7 +48,7 @@ export const VersionInfoSubView: React.FC<VersionInfoSubViewProps> = ({ onBack }
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#eaedff] text-[#3625cd] mb-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#5046e5] animate-pulse" />
-            <span className="text-xs font-semibold tracking-wide">1.0.0 (최신 버전)</span>
+            <span className="text-xs font-semibold tracking-wide">{SITE_CONFIG.appVersion} (최신 버전)</span>
           </div>
 
           <div className="flex items-center text-[#777587] text-xs space-x-1">
@@ -78,8 +76,8 @@ export const VersionInfoSubView: React.FC<VersionInfoSubViewProps> = ({ onBack }
 
           <div className="flex items-baseline justify-between mb-3">
             <div className="flex items-center space-x-1.5">
-              <span className="text-sm font-bold text-[#5046e5]">v1.0.0</span>
-              <span className="text-xs text-[#777587]">(2025.01)</span>
+              <span className="text-sm font-bold text-[#5046e5]">v{SITE_CONFIG.appVersion}</span>
+              <span className="text-xs text-[#777587]">(2026.11)</span>
             </div>
             <span className="text-[11px] font-semibold text-[#00687a] px-2 py-0.5 rounded-full bg-[#57dffe]/30">
               정식 출시
@@ -133,7 +131,7 @@ export const VersionInfoSubView: React.FC<VersionInfoSubViewProps> = ({ onBack }
 
         {/* Footer */}
         <div className="text-center py-2 text-xs text-[#777587]">
-          <p>© 2025 ClipSort Inc. All rights reserved.</p>
+          <p>© 2025-2026 ClipSort. All rights reserved.</p>
         </div>
       </main>
     </div>

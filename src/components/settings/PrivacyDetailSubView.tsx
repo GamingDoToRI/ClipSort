@@ -1,4 +1,5 @@
 import React from 'react';
+import { SITE_CONFIG } from '../../config/siteConfig';
 
 interface PrivacyDetailSubViewProps {
   onBack: () => void;
@@ -41,7 +42,7 @@ export const PrivacyDetailSubView: React.FC<PrivacyDetailSubViewProps> = ({
         <div className="pt-2 pb-3">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#eaedff] border border-[#dae2fd]/50 text-[#3625cd] text-xs font-semibold mb-2">
             <span className="material-symbols-outlined text-[14px]">schedule</span>
-            <span>최종 개정일: 2025년 1월 1일</span>
+            <span>최종 개정일: {SITE_CONFIG.policyEffectiveDateKo}</span>
           </div>
           <p className="text-xs text-[#464555] leading-relaxed">
             ClipSort는 이용자의 개인정보를 안전하게 보호하며, '개인정보 보호법' 등 관련 법령을 엄격히 준수합니다. 본 방침은 북마크 관리 및 AI 분류 과정에서 수집되는 정보의 처리 투명성을 안내합니다.
@@ -163,13 +164,13 @@ export const PrivacyDetailSubView: React.FC<PrivacyDetailSubViewProps> = ({
             </p>
             <div className="mt-2 p-2.5 rounded-xl bg-[#f2f3ff] border border-[#dae2fd]/40 flex flex-col gap-1 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-[#777587]">담당부서</span>
-                <span className="font-semibold text-[#131b2e]">데이터 보안 총괄팀</span>
+                <span className="text-[#777587]">담당자</span>
+                <span className="font-semibold text-[#131b2e]">개인정보 보호책임자 (ClipSort 운영팀)</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-[#777587]">연락처</span>
-                <a className="text-[#5046e5] font-semibold hover:underline" href="mailto:privacy@clipsort.app">
-                  privacy@clipsort.app
+                <a className="text-[#5046e5] font-semibold hover:underline" href={`mailto:${SITE_CONFIG.operatorEmail}`}>
+                  {SITE_CONFIG.operatorEmail}
                 </a>
               </div>
             </div>

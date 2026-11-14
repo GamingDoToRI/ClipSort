@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile } from '../../types';
 import { AvatarCropModal } from './AvatarCropModal';
+import { auth } from '../../lib/firebase';
 import { LogIn, User, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface MyInfoSubViewProps {
@@ -14,6 +15,8 @@ interface MyInfoSubViewProps {
   onOpenAuth?: () => void;
   onLogout: () => void;
   onDeleteAccount?: () => Promise<void>;
+  onLinkKakao?: () => Promise<void>;
+  onLinkGoogle?: () => Promise<void>;
 }
 
 export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
@@ -27,6 +30,8 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
   onOpenAuth,
   onLogout,
   onDeleteAccount,
+  onLinkKakao,
+  onLinkGoogle,
 }) => {
   const [isEditingNick, setIsEditingNick] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(user.nickname);
@@ -35,25 +40,53 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [confirmDeleteCheck, setConfirmDeleteCheck] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [linkingProvider, setLinkingProvider] = useState<'kakao' | 'google' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const accountIdentifier = user.isLoggedIn
+    ? user.email || user.uid || user.nickname
+    : '게스트';
+
+  const isKakaoLinked =
+    user.provider === 'kakao' || Boolean(user.linkedProviders?.includes('kakao'));
+  const isGoogleLinked =
+    user.provider === 'google' || Boolean(user.linkedProviders?.includes('google'));
+
+  const providerLabel =
+    isKakaoLinked && isGoogleLinked
+      ? '카카오 (Google 통합)'
+      : user.provider === 'google'
+      ? 'Google 간편 로그인'
+      : user.provider === 'kakao'
+      ? '카카오 간편 로그인'
+      : '이메일 회원';
+
+  const formattedJoinDate = (() => {
+    const raw = auth.currentUser?.metadata?.creationTime;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}.${mm}.${dd}`;
+  })();
 
   const handleSaveNickname = () => {
     if (nicknameInput.trim()) {
       onUpdateNickname(nicknameInput.trim());
       setIsEditingNick(false);
-      onShowToast('닉네임이 성공적으로 변경되었습니다');
     }
   };
 
   const handleCopyUserId = () => {
-    navigator.clipboard?.writeText(user.isLoggedIn ? '@clipsort_user' : '@guest');
-    onShowToast(`아이디(${user.isLoggedIn ? '@clipsort_user' : '@guest'})가 복사되었습니다`);
+    navigator.clipboard?.writeText(accountIdentifier);
+    onShowToast(`계정 정보(${accountIdentifier})가 복사되었습니다`);
   };
 
   const handleConfirmLogout = () => {
     setShowLogoutModal(false);
     onLogout();
-    onShowToast('로그아웃 되었습니다.');
   };
 
   const handleConfirmDeleteAccount = async () => {
@@ -220,14 +253,16 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
 
           <div className="h-px bg-[#dae2fd]/30 mx-3" />
 
-          {/* Row 2: 아이디 */}
+          {/* Row 2: 로그인 방식 */}
           <div
             onClick={handleCopyUserId}
             className="flex items-center justify-between p-3.5 rounded-xl hover:bg-[#f2f3ff] transition-colors cursor-pointer"
           >
-            <span className="text-sm font-medium text-[#131b2e]">아이디</span>
+            <span className="text-sm font-medium text-[#131b2e]">로그인 방식</span>
             <div className="flex items-center gap-1.5 text-xs text-[#777587]">
-              <span>{user.isLoggedIn ? '@clipsort_user' : '@guest'}</span>
+              <span className="font-semibold text-[#5046e5]">
+                {user.isLoggedIn ? providerLabel : '게스트'}
+              </span>
               <span className="material-symbols-outlined text-[16px] text-[#5046e5]">content_copy</span>
             </div>
           </div>
@@ -238,31 +273,150 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
           <div className="flex items-center justify-between p-3.5 rounded-xl">
             <span className="text-sm font-medium text-[#131b2e]">연동 이메일</span>
             <div className="flex items-center gap-1.5 text-xs text-[#777587]">
-              <span>{user.isLoggedIn ? user.email || 'clipsort_user@gmail.com' : '미연동(로그인 필요)'}</span>
+              <span>
+                {user.isLoggedIn
+                  ? user.email || (user.provider === 'kakao' ? '이메일 제공 미동의 (카카오 연동)' : '이메일 미등록')
+                  : '미연동(로그인 필요)'}
+              </span>
             </div>
           </div>
         </section>
+
+        {/* Linked Social Accounts & Account Merge Section */}
+        {user.isLoggedIn && (onLinkKakao || onLinkGoogle) && (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xs font-semibold text-[#777587]">연결된 소셜 계정 (계정 통합)</h2>
+              <span className="text-[11px] font-semibold text-[#5046e5]">카카오 대표 계정 기준</span>
+            </div>
+            <div className="bg-white rounded-2xl border border-[#dae2fd]/60 divide-y divide-[#dae2fd]/30 overflow-hidden shadow-xs">
+              {/* Kakao Row */}
+              <div className="flex items-center justify-between p-3.5 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-[#FEE500] text-[#191919] flex items-center justify-center shrink-0">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 3C6.48 3 2 6.46 2 10.72c0 2.74 1.82 5.14 4.55 6.49-.16.58-.58 2.1-.67 2.43-.11.42.15.41.32.3.13-.09 2.09-1.42 2.94-2 .91.14 1.87.21 2.86.21 5.52 0 10-3.46 10-7.43C22 6.46 17.52 3 12 3z" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#131b2e]">카카오</p>
+                    <p className="text-[11px] text-[#777587] truncate">
+                      {isKakaoLinked
+                        ? user.linkedEmails?.kakao || '대표 계정으로 연결됨'
+                        : '연결 시 카카오 계정이 대표 계정이 됩니다'}
+                    </p>
+                  </div>
+                </div>
+                {isKakaoLinked ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold shrink-0">
+                    대표 · 연결됨
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={Boolean(linkingProvider)}
+                    onClick={async () => {
+                      if (!onLinkKakao || linkingProvider) return;
+                      setLinkingProvider('kakao');
+                      try {
+                        await onLinkKakao();
+                      } finally {
+                        setLinkingProvider(null);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#FEE500] hover:bg-[#F5DC00] text-[#191919] text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1"
+                  >
+                    {linkingProvider === 'kakao' ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>연결 중...</span>
+                      </>
+                    ) : (
+                      <span>카카오 연결·병합</span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Google Row */}
+              <div className="flex items-center justify-between p-3.5 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-[#f8f9fa] border border-[#dadce0] flex items-center justify-center shrink-0">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"/>
+                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.16 0 9.97 0 12s.45 3.84 1.24 5.42l4.04-3.15z"/>
+                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#131b2e]">Google</p>
+                    <p className="text-[11px] text-[#777587] truncate">
+                      {isGoogleLinked
+                        ? user.linkedEmails?.google || (user.provider === 'google' ? user.email : '통합 연결됨')
+                        : '이메일이 달라도 Google 보관함을 하나로 병합'}
+                    </p>
+                  </div>
+                </div>
+                {isGoogleLinked ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-[#eaedff] text-[#5046e5] border border-[#dae2fd] text-[11px] font-bold shrink-0">
+                    연결됨
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={Boolean(linkingProvider)}
+                    onClick={async () => {
+                      if (!onLinkGoogle || linkingProvider) return;
+                      setLinkingProvider('google');
+                      try {
+                        await onLinkGoogle();
+                      } finally {
+                        setLinkingProvider(null);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#f2f3ff] text-[#131b2e] border border-[#dadce0] text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1"
+                  >
+                    {linkingProvider === 'google' ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>연결 중...</span>
+                      </>
+                    ) : (
+                      <span>Google 연결·병합</span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-[#777587] px-1 leading-relaxed">
+              두 계정을 연결하면 기존에 각각 저장했던 영상 북마크가 하나로 합쳐지며, 이후 Google과 카카오 중 어느 쪽으로 로그인해도 동일한 보관함이 열립니다.
+            </p>
+          </section>
+        )}
 
         {/* Security & Actions Section */}
         {user.isLoggedIn ? (
           <section className="space-y-2">
             <h2 className="text-xs font-semibold text-[#777587] px-1">보안 및 변경</h2>
             <div className="bg-white rounded-2xl border border-[#dae2fd]/60 divide-y divide-[#dae2fd]/30 overflow-hidden shadow-xs">
-              {/* 비밀번호 변경 */}
-              <div
-                onClick={onNavigateChangePassword}
-                className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
-                    <span className="material-symbols-outlined text-[19px]">lock_reset</span>
+              {/* 비밀번호 변경 (이메일 가입 회원에게만 노출) */}
+              {(!user.provider || user.provider === 'email') && (
+                <div
+                  onClick={onNavigateChangePassword}
+                  className="flex items-center justify-between p-3.5 hover:bg-[#f2f3ff] transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center text-[#464555]">
+                      <span className="material-symbols-outlined text-[19px]">lock_reset</span>
+                    </div>
+                    <span className="text-sm font-medium text-[#131b2e]">비밀번호 변경</span>
                   </div>
-                  <span className="text-sm font-medium text-[#131b2e]">비밀번호 변경</span>
+                  <span className="material-symbols-outlined text-[#777587] text-[20px]">
+                    chevron_right
+                  </span>
                 </div>
-                <span className="material-symbols-outlined text-[#777587] text-[20px]">
-                  chevron_right
-                </span>
-              </div>
+              )}
 
               {/* 로그아웃 */}
               <div
@@ -315,10 +469,10 @@ export const MyInfoSubView: React.FC<MyInfoSubViewProps> = ({
         )}
 
         {/* Account Metadata */}
-        {user.isLoggedIn && (
+        {user.isLoggedIn && formattedJoinDate && (
           <div className="flex items-center justify-center gap-1.5 py-3 text-xs text-[#777587]">
             <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-            <span>가입일 2025.01.15</span>
+            <span>가입일 {formattedJoinDate}</span>
           </div>
         )}
       </main>

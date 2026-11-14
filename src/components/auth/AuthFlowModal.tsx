@@ -11,11 +11,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import { AuthScreenType, UserProfile } from '../../types';
+import { SITE_CONFIG } from '../../config/siteConfig';
 import {
   auth,
   googleProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCustomToken,
 } from '../../lib/firebase';
 
 interface AuthFlowModalProps {
@@ -32,8 +34,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 }) => {
   const [screen, setScreen] = useState<AuthScreenType>('email_direct_login');
 
-  // Main Login screen states (matching user reference mockup)
-  const [loginTab, setLoginTab] = useState<'id' | 'phone'>('id');
+  // Main Login screen states
   const [loginId, setLoginId] = useState(() => {
     try {
       return localStorage.getItem('clipsort_saved_id') || '';
@@ -41,7 +42,6 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       return '';
     }
   });
-  const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [saveId, setSaveId] = useState(() => {
     try {
@@ -60,8 +60,8 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
 
   // Find ID states
-  const [findIdName, setFindIdName] = useState('');
   const [findIdContact, setFindIdContact] = useState('');
+  const [findIdError, setFindIdError] = useState<string | null>(null);
   const [foundIdResult, setFoundIdResult] = useState<string | null>(null);
 
   // Reset to email_direct_login when modal opens
@@ -161,6 +161,85 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     }, 1000);
     return () => clearInterval(interval);
   }, [screen, findPwCodeSent]);
+
+  // Pre-fetched Kakao Auth URL cache so popup opens synchronously on click when ready
+  const [kakaoAuthUrlCache, setKakaoAuthUrlCache] = useState<string | null>(null);
+  const [isKakaoLoading, setIsKakaoLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    fetch('/api/auth/kakao/url')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.success && data.url) {
+          setKakaoAuthUrlCache(data.url);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  // Listen for OAuth popup completion messages (Kakao)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOAuthMessage = async (event: MessageEvent) => {
+      const origin = event.origin || '';
+      const isTrustedOrigin =
+        origin === window.location.origin ||
+        origin.endsWith('.run.app') ||
+        origin.includes('localhost');
+      if (!isTrustedOrigin) return;
+
+      const payload = event.data;
+      if (!payload || typeof payload !== 'object') return;
+
+      if (payload.type === 'KAKAO_OAUTH_ERROR') {
+        setIsKakaoLoading(false);
+        setLoginError(payload.error || '카카오 로그인에 실패했습니다. 다시 시도해 주세요.');
+        return;
+      }
+
+      if (payload.type === 'KAKAO_OAUTH_SUCCESS' && payload.customToken) {
+        try {
+          setIsKakaoLoading(true);
+          setLoginError(null);
+          const cred = await signInWithCustomToken(auth, payload.customToken);
+          const fbUser = cred.user;
+          const profile = payload.profile || {};
+
+          onLoginSuccess({
+            isLoggedIn: true,
+            uid: fbUser.uid,
+            nickname:
+              profile.nickname ||
+              fbUser.displayName ||
+              profile.email?.split('@')[0] ||
+              '카카오사용자',
+            email: profile.email || fbUser.email || '',
+            avatarUrl: profile.avatarUrl || fbUser.photoURL || undefined,
+            provider: 'kakao',
+            linkedProviders: profile.linkedProviders || ['kakao'],
+            linkedEmails: profile.linkedEmails,
+          });
+          onClose();
+        } catch (err: any) {
+          console.error('Kakao Firebase custom token sign-in error:', err);
+          setLoginError(
+            err?.message || '카카오 계정 인증은 완료되었으나 세션 연결에 실패했습니다.'
+          );
+        } finally {
+          setIsKakaoLoading(false);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
+  }, [isOpen, onLoginSuccess, onClose]);
 
   if (!isOpen) return null;
 
@@ -604,6 +683,55 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     }
   };
 
+  const resolveUnifiedLoginProfile = async (
+    fbUser: any,
+    fallback: UserProfile
+  ): Promise<UserProfile> => {
+    try {
+      const idToken = await fbUser.getIdToken();
+      const res = await fetch('/api/auth/resolve-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        if (data.redirected && data.switchCustomToken) {
+          const switched = await signInWithCustomToken(auth, data.switchCustomToken);
+          const p = data.profile || {};
+          return {
+            isLoggedIn: true,
+            uid: switched.user.uid,
+            nickname: p.nickname || switched.user.displayName || fallback.nickname,
+            email: p.email || switched.user.email || fallback.email,
+            avatarUrl: p.avatarUrl || switched.user.photoURL || fallback.avatarUrl,
+            provider: p.provider || 'kakao',
+            linkedProviders: p.linkedProviders || ['kakao', fallback.provider || 'google'],
+            linkedEmails: p.linkedEmails,
+          };
+        }
+        if (data.profile) {
+          return {
+            ...fallback,
+            uid: data.profile.uid || fallback.uid,
+            nickname: data.profile.nickname || fallback.nickname,
+            email: data.profile.email || fallback.email,
+            avatarUrl: data.profile.avatarUrl || fallback.avatarUrl,
+            provider: data.profile.provider || fallback.provider,
+            linkedProviders: data.profile.linkedProviders,
+            linkedEmails: data.profile.linkedEmails,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Unified session check warning:', err);
+    }
+    return fallback;
+  };
+
   const handleGoogleLogin = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
@@ -611,14 +739,16 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
-      onLoginSuccess({
+      const unifiedProfile = await resolveUnifiedLoginProfile(fbUser, {
         isLoggedIn: true,
         uid: fbUser.uid,
         nickname: fbUser.displayName || fbUser.email?.split('@')[0] || '클립사용자',
         email: fbUser.email || '',
         avatarUrl: fbUser.photoURL || undefined,
         provider: 'google',
+        linkedProviders: ['google'],
       });
+      onLoginSuccess(unifiedProfile);
       onClose();
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
@@ -637,15 +767,66 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     }
   };
 
+  const handleKakaoLogin = async () => {
+    if (isSubmitting || isKakaoLoading) return;
+    setIsKakaoLoading(true);
+    setLoginError(null);
+
+    try {
+      let targetUrl = kakaoAuthUrlCache;
+      // Always fetch a fresh state token if cache isn't warm (or refresh after use)
+      if (!targetUrl) {
+        const res = await fetch('/api/auth/kakao/url');
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success || !data?.url) {
+          setLoginError(
+            data?.error || '카카오 로그인 설정이 아직 완료되지 않았습니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.'
+          );
+          setIsKakaoLoading(false);
+          return;
+        }
+        targetUrl = data.url;
+      } else {
+        // Consume cached URL and prefetch next state in background
+        setKakaoAuthUrlCache(null);
+        fetch('/api/auth/kakao/url')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.success && d.url) setKakaoAuthUrlCache(d.url);
+          })
+          .catch(() => {});
+      }
+
+      const popup = window.open(
+        targetUrl!,
+        'kakao_oauth_popup',
+        'width=500,height=680,scrollbars=yes,resizable=yes'
+      );
+
+      if (!popup) {
+        setLoginError('팝업 차단이 활성화되어 있습니다. 브라우저의 팝업 차단을 해제하고 다시 시도해 주세요.');
+        setIsKakaoLoading(false);
+        return;
+      }
+
+      // Reset loading state if user manually closes popup before completing login
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          setIsKakaoLoading(false);
+        }
+      }, 600);
+    } catch (err: any) {
+      console.error('Kakao OAuth start error:', err);
+      setLoginError(err?.message || '카카오 로그인 창을 여는 중 오류가 발생했습니다.');
+      setIsKakaoLoading(false);
+    }
+  };
+
   const handleDirectLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isSubmitting) return;
     setLoginError(null);
-
-    if (loginTab === 'phone') {
-      setLoginError('휴대폰 번호 로그인은 현재 지원 준비 중입니다. 이메일 로그인 또는 Google 로그인을 이용해 주세요.');
-      return;
-    }
 
     const idToUse = loginId.trim();
     if (!idToUse) {
@@ -680,13 +861,15 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
         // ignore
       }
 
-      onLoginSuccess({
+      const unifiedProfile = await resolveUnifiedLoginProfile(fbUser, {
         isLoggedIn: true,
         uid: fbUser.uid,
         nickname: fbUser.displayName || fbUser.email?.split('@')[0] || idToUse.split('@')[0] || '클립사용자',
         email: fbUser.email || emailToUse,
         provider: 'email',
+        linkedProviders: ['email'],
       });
+      onLoginSuccess(unifiedProfile);
       onClose();
     } catch (err: any) {
       console.warn('Email login error details:', err.code, err.message);
@@ -712,15 +895,17 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
 
   const handleFindIdSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!findIdName.trim()) {
-      alert('이름을 입력해 주세요.');
+    setFindIdError(null);
+    const trimmed = findIdContact.trim();
+    if (!trimmed) {
+      setFindIdError('가입 시 사용하신 이메일 주소를 입력해 주세요.');
       return;
     }
-    if (!findIdContact.trim()) {
-      alert('휴대폰 번호 또는 이메일을 입력해 주세요.');
+    if (!trimmed.includes('@')) {
+      setFindIdError('ClipSort는 이메일 주소 자체를 아이디로 사용합니다. 이메일 형식으로 입력해 주세요.');
       return;
     }
-    setFoundIdResult('creator.vision@gmail.com');
+    setFoundIdResult(trimmed.toLowerCase());
   };
 
   return (
@@ -744,50 +929,21 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
               {/* Header Title */}
               <div className="pt-7 pb-4 px-6 text-center border-b border-[#f0f2f7]">
                 <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">ClipSort 로그인</h1>
-              </div>
-
-              {/* Tabs: 아이디 / 휴대폰 번호 */}
-              <div className="grid grid-cols-2 border-b border-[#e5e7eb] px-6 text-center">
-                <button
-                  type="button"
-                  onClick={() => setLoginTab('id')}
-                  className={`py-3 text-sm font-bold transition-colors relative cursor-pointer ${
-                    loginTab === 'id' ? 'text-[#131b2e]' : 'text-[#8c8c9a] hover:text-[#131b2e]'
-                  }`}
-                >
-                  아이디
-                  {loginTab === 'id' && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#131b2e]" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLoginTab('phone')}
-                  className={`py-3 text-sm font-bold transition-colors relative cursor-pointer ${
-                    loginTab === 'phone' ? 'text-[#131b2e]' : 'text-[#8c8c9a] hover:text-[#131b2e]'
-                  }`}
-                >
-                  휴대폰 번호
-                  {loginTab === 'phone' && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#131b2e]" />
-                  )}
-                </button>
+                <p className="text-xs text-[#777587] mt-1">이메일 또는 소셜 계정으로 간편하게 시작하세요</p>
               </div>
 
               {/* Form Area */}
               <form onSubmit={handleDirectLogin} className="p-6 space-y-3.5">
-                {/* ID / Phone Input */}
+                {/* Email / ID Input */}
                 <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e] transition-all">
                   <label className="block text-[11px] text-[#777587] font-medium">
-                    {loginTab === 'id' ? '아이디' : '휴대폰 번호'}
+                    이메일 (아이디)
                   </label>
                   <input
-                    type={loginTab === 'id' ? 'text' : 'tel'}
-                    value={loginTab === 'id' ? loginId : loginPhone}
-                    onChange={(e) =>
-                      loginTab === 'id' ? setLoginId(e.target.value) : setLoginPhone(e.target.value)
-                    }
-                    placeholder={loginTab === 'id' ? '아이디 또는 이메일' : '010-0000-0000'}
+                    type="text"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
+                    placeholder="example@gmail.com"
                     className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
                   />
                 </div>
@@ -895,12 +1051,34 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 </div>
 
                 {/* Social and Sign up Buttons */}
-                <div className="pt-3 space-y-3 border-t border-[#dae2fd]/50">
+                <div className="pt-3 space-y-2.5 border-t border-[#dae2fd]/50">
+                  {/* Kakao 1-Click OAuth Login */}
+                  <button
+                    type="button"
+                    onClick={handleKakaoLogin}
+                    disabled={isSubmitting || isKakaoLoading}
+                    className="w-full py-3.5 px-4 rounded-xl bg-[#FEE500] hover:bg-[#F5DC00] text-[#191919] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs disabled:opacity-60"
+                  >
+                    {isKakaoLoading ? (
+                      <>
+                        <RotateCw className="w-4 h-4 animate-spin" />
+                        <span>카카오 로그인 연결 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 3C6.48 3 2 6.46 2 10.72c0 2.74 1.82 5.14 4.55 6.49-.16.58-.58 2.1-.67 2.43-.11.42.15.41.32.3.13-.09 2.09-1.42 2.94-2 .91.14 1.87.21 2.86.21 5.52 0 10-3.46 10-7.43C22 6.46 17.52 3 12 3z" />
+                        </svg>
+                        <span>카카오로 1초 시작하기</span>
+                      </>
+                    )}
+                  </button>
+
                   {/* Google Login (Official OAuth) */}
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isKakaoLoading}
                     className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-[#f8f9fa] text-[#1f1f1f] font-bold text-xs border border-[#dadce0] flex items-center justify-center gap-2.5 transition-all active:scale-[0.99] cursor-pointer shadow-xs disabled:opacity-60"
                   >
                     <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -938,11 +1116,11 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setScreen('email_direct_login')}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#f2f3ff] transition-colors"
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-[#131b2e] hover:bg-[#f2f3ff] transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">아이디 찾기</h1>
+                <h1 className="text-base font-bold text-[#131b2e] tracking-tight">계정 · 아이디 안내</h1>
                 <div className="w-9" />
               </div>
 
@@ -952,12 +1130,12 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                     <span className="material-symbols-outlined text-[32px] text-[#5046e5]">
                       account_circle
                     </span>
-                    <h3 className="text-sm font-bold text-[#131b2e]">회원님의 가입 아이디입니다</h3>
-                    <p className="text-base font-extrabold text-[#3625cd] bg-white py-2.5 px-4 rounded-xl border border-[#dae2fd]">
+                    <h3 className="text-sm font-bold text-[#131b2e]">입력하신 이메일로 바로 진행할 수 있어요</h3>
+                    <p className="text-base font-extrabold text-[#3625cd] bg-white py-2.5 px-4 rounded-xl border border-[#dae2fd] break-all">
                       {foundIdResult}
                     </p>
-                    <p className="text-[11px] text-[#777587]">
-                      가입일: 2025.01.15 (이메일 인증 완료 계정)
+                    <p className="text-[11px] text-[#777587] leading-relaxed">
+                      ClipSort는 가입하신 이메일 주소 자체를 아이디로 사용합니다. 비밀번호가 기억나지 않으면 아래에서 바로 재설정하실 수 있습니다.
                     </p>
                   </div>
 
@@ -969,55 +1147,69 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                     }}
                     className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all cursor-pointer shadow-sm"
                   >
-                    로그인하러 가기
+                    이 이메일로 로그인하기
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setScreen('find_password')}
+                    onClick={() => {
+                      setFindPwEmail(foundIdResult);
+                      setScreen('find_password');
+                    }}
                     className="w-full py-3 rounded-xl bg-[#f0f2f5] hover:bg-[#e4e6ea] text-[#131b2e] font-semibold text-xs transition-colors cursor-pointer"
                   >
-                    비밀번호도 재설정하기
+                    이 이메일로 비밀번호 재설정하기
                   </button>
                 </div>
               ) : (
                 <form onSubmit={handleFindIdSubmit} className="pt-4 space-y-3.5">
-                  <p className="text-xs text-[#777587] leading-relaxed">
-                    가입 시 등록한 이름과 연락처(휴대폰 번호 또는 이메일)를 입력해 주세요.
-                  </p>
-
-                  <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e]">
-                    <label className="block text-[11px] text-[#777587] font-medium">이름</label>
-                    <input
-                      type="text"
-                      value={findIdName}
-                      onChange={(e) => setFindIdName(e.target.value)}
-                      placeholder="이름 입력 (예: 김클립)"
-                      required
-                      className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
-                    />
+                  <div className="p-3.5 rounded-xl bg-[#f2f3ff] border border-[#dae2fd]/60 text-xs text-[#464555] leading-relaxed space-y-1.5">
+                    <p className="font-bold text-[#131b2e]">ClipSort 아이디 안내</p>
+                    <p>
+                      • 이메일 회원가입 시 입력하신 <strong>이메일 주소 자체가 아이디</strong>입니다.<br />
+                      • <strong>Google 계정</strong>으로 가입하셨다면 별도 아이디 없이 <strong>[Google 계정으로 계속하기]</strong>로 바로 로그인됩니다.
+                    </p>
                   </div>
 
                   <div className="bg-[#f4f5f8] rounded-xl px-4 py-2.5 focus-within:ring-1 focus-within:ring-[#131b2e]">
                     <label className="block text-[11px] text-[#777587] font-medium">
-                      휴대폰 번호 또는 이메일
+                      기억나는 이메일 주소 확인
                     </label>
                     <input
                       type="text"
                       value={findIdContact}
-                      onChange={(e) => setFindIdContact(e.target.value)}
-                      placeholder="010-0000-0000 또는 이메일 입력"
-                      required
+                      onChange={(e) => {
+                        setFindIdContact(e.target.value);
+                        setFindIdError(null);
+                      }}
+                      placeholder="예: example@gmail.com"
                       className="w-full bg-transparent text-sm text-[#131b2e] font-semibold focus:outline-none placeholder:text-[#a0a0ab] pt-0.5"
                     />
                   </div>
 
+                  {findIdError && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                      {findIdError}
+                    </div>
+                  )}
+
                   <button
                     type="submit"
-                    className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all cursor-pointer shadow-sm mt-2"
+                    className="w-full py-3.5 rounded-xl bg-[#1e1e24] hover:bg-[#131b2e] text-white font-bold text-sm tracking-tight transition-all cursor-pointer shadow-sm mt-1"
                   >
-                    아이디 찾기
+                    이 이메일로 로그인 / 비밀번호 찾기
                   </button>
+
+                  <p className="text-[11px] text-[#777587] text-center pt-1 leading-relaxed">
+                    계정을 전혀 기억할 수 없다면 운영팀(
+                    <a
+                      href={`mailto:${SITE_CONFIG.operatorEmail}`}
+                      className="text-[#5046e5] font-semibold hover:underline"
+                    >
+                      {SITE_CONFIG.operatorEmail}
+                    </a>
+                    )으로 문의해 주세요.
+                  </p>
                 </form>
               )}
             </div>
