@@ -69,10 +69,10 @@ export function ruleBasedClassify(
   const text = `${titleLower} ${urlPath.toLowerCase()}`;
   const excluded = new Set(excludedCategories.map((c) => c.trim().toLowerCase()));
 
-  // 1. 음식 (Food)
+  // 1. 음식 (Food) - Avoid bare '국'/'탕' which falsely match '한국', '솜사탕', etc.
   if (
     !excluded.has('음식') &&
-    (/(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기)/i.test(
+    (/(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|라면|디저트|브런치|반찬|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|식당|미식|안주|만들기|삼계탕|갈비탕|설렁탕|감자탕|매운탕|곰탕|마라탕|육개장|탕수육|샤브샤브|미역국|떡국|국밥|국수|칼국수|김밥|비빔밥|볶음밥|덮밥|초밥)/i.test(
       text
     ) ||
       /\b(cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating|asmr)\b/i.test(
@@ -154,7 +154,20 @@ export function ruleBasedClassify(
     return '패션/뷰티';
   }
 
-  // 8. 예능/유머 (Entertainment)
+  // 8. 반려동물 (Pets) - Check before 예능/유머 so #말티즈 #쇼츠 classifies as 반려동물
+  if (
+    !excluded.has('반려동물') &&
+    (/(반려동물|강아지|고양이|댕댕이|냥이|냥냥이|애견|애묘|반려견|반려묘|말티즈|비숑|푸들|포메|포메라니안|골든리트리버|리트리버|웰시코기|시바견|시츄|치와와|진돗개|닥스훈트|사모예드|허스키|보더콜리|슈나우저|꼬순내|강쥐|멍멍이|멍뭉이|집사|페르시안|러시안블루|스코티시폴드|코숏|먼치킨|랙돌|동물)/i.test(
+      text
+    ) ||
+      /\b(pet|pets|dog|dogs|cat|cats|puppy|puppies|kitten|kittens|animal|maltese|bichon|poodle|corgi)\b/i.test(
+        titleLower
+      ))
+  ) {
+    return '반려동물';
+  }
+
+  // 9. 예능/유머 (Entertainment)
   if (
     !excluded.has('예능/유머') &&
     /(예능|유머|웃긴|개그|코미디|쇼츠|밈|웃음|꿀잼|몰카|토크|comedy|humor|funny|meme|entertainment)/i.test(
@@ -162,16 +175,6 @@ export function ruleBasedClassify(
     )
   ) {
     return '예능/유머';
-  }
-
-  // 9. 반려동물 (Pets)
-  if (
-    !excluded.has('반려동물') &&
-    /(반려동물|강아지|고양이|댕댕이|냥이|애견|애묘|포메라니안|골든리트리버|동물|pet|dog|cat|puppy|kitten|animal)/i.test(
-      text
-    )
-  ) {
-    return '반려동물';
   }
 
   // 10. 영화/드라마 (Movies / Drama)
@@ -248,8 +251,157 @@ export function ruleBasedClassify(
   return firstValid || '예능/유머';
 }
 
+async function fetchThumbnailImagePart(thumbnailUrl: string): Promise<{
+  inlineData: { mimeType: string; data: string };
+} | null> {
+  if (!thumbnailUrl || !/^https?:\/\//i.test(thumbnailUrl)) return null;
+  try {
+    const res = await fetch(thumbnailUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      },
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!res.ok) return null;
+    const rawType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim().toLowerCase();
+    if (!rawType.startsWith('image/')) return null;
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > 2.5 * 1024 * 1024) return null;
+
+    return {
+      inlineData: {
+        mimeType: rawType,
+        data: buf.toString('base64'),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+const CORE_BROAD_CATEGORIES = [
+  '음식',
+  '운동',
+  '여행',
+  '게임',
+  '테크',
+  '자기계발',
+  '패션/뷰티',
+  '반려동물',
+  '예능/유머',
+  '음악/댄스',
+  '영화/드라마',
+  '라이프스타일',
+];
+
+const PRIMARY_GEMINI_MODEL = 'gemini-4-hydrogen';
+const FALLBACK_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const MODEL_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+let cachedFlashModel: { name: string; expiresAt: number } | null = null;
+
+function isModelUnavailableError(err: any): boolean {
+  const status = err?.status || err?.code || err?.response?.status;
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    status === 404 ||
+    msg.includes('not_found') ||
+    msg.includes('not found') ||
+    msg.includes('not supported') ||
+    msg.includes('deprecated') ||
+    msg.includes('retired') ||
+    msg.includes('no longer available') ||
+    msg.includes('invalid model')
+  );
+}
+
+function scoreAutoFlashCandidate(modelId: string): number {
+  const id = modelId.toLowerCase();
+  if (!id.startsWith('gemini-')) return -1;
+
+  // Exclude specialized, paid-heavy, or deprecated legacy models
+  if (
+    /(image|tts|live|audio|transcribe|translate|embedding|veo|lyria|robotics|computer-use|pro|carbon|argon|1\.0|1\.5|2\.0|exp|customtools|thinking)/i.test(
+      id
+    )
+  ) {
+    return -1;
+  }
+
+  const isFastFamily = id.includes('flash') || id.includes('hydrogen');
+  if (!isFastFamily) return -1;
+
+  const verMatch = id.match(/^gemini-(\d+(?:\.\d+)?)/);
+  const versionNum = verMatch ? parseFloat(verMatch[1]) : 0;
+  if (!Number.isFinite(versionNum) || versionNum < 3) return -1;
+
+  let score = versionNum * 1000;
+  if (!id.includes('lite')) score += 100; // Prefer standard Flash/Hydrogen over Lite
+  if (id === PRIMARY_GEMINI_MODEL) score += 60; // Keep default primary preferred within same generation
+  if (id.includes('latest')) score += 50;
+  if (!id.includes('preview')) score += 25; // Prefer GA over preview within same version
+  // Prefer cleaner canonical aliases over dated snapshots (e.g. -001, -04-2026)
+  if (!/\d{3,}$/.test(id)) score += 10;
+  return score;
+}
+
+async function discoverLatestFlashModel(
+  ai: GoogleGenAI,
+  excludeModels: Set<string> = new Set()
+): Promise<string | null> {
+  try {
+    const pagerPromise = ai.models.list({ config: { pageSize: 100 } });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('MODEL_LIST_TIMEOUT')), 1800)
+    );
+    const pager = await Promise.race([pagerPromise, timeoutPromise]);
+
+    let bestModel: string | null = null;
+    let bestScore = -1;
+
+    for await (const m of pager) {
+      const rawName = (m.name || '').replace(/^models\//, '').trim();
+      if (!rawName || excludeModels.has(rawName)) continue;
+
+      const actions = m.supportedActions;
+      if (Array.isArray(actions) && actions.length > 0 && !actions.includes('generateContent')) {
+        continue;
+      }
+
+      const score = scoreAutoFlashCandidate(rawName);
+      if (score > bestScore) {
+        bestScore = score;
+        bestModel = rawName;
+      }
+    }
+
+    return bestModel;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveInitialClassificationModel(ai: GoogleGenAI): Promise<string> {
+  const envModel = (process.env.GEMINI_MODEL || '').trim();
+  if (envModel) return envModel;
+
+  if (cachedFlashModel && Date.now() < cachedFlashModel.expiresAt) {
+    return cachedFlashModel.name;
+  }
+
+  const discovered = await discoverLatestFlashModel(ai);
+  const chosen = discovered || PRIMARY_GEMINI_MODEL;
+  cachedFlashModel = {
+    name: chosen,
+    expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
+  };
+  return chosen;
+}
+
 /**
- * AI Classifier using Gemini
+ * AI Classifier using Gemini (Multimodal: Title + Hashtags + URL + Thumbnail Image)
  */
 export async function classifyWithAI(
   title: string,
@@ -258,7 +410,7 @@ export async function classifyWithAI(
   excludedCategories: string[] = [],
   existingCategories: string[] = []
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
   if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
     try {
@@ -271,41 +423,86 @@ export async function classifyWithAI(
         },
       });
 
-      const validExisting = existingCategories.filter((c) => c && c !== '전체' && !excludedCategories.includes(c));
-      const existingList = validExisting.length > 0
-        ? validExisting.join(', ')
-        : '음식, 운동, 여행, 게임, 테크, 자기계발, 패션/뷰티, 예능/유머, 음악/댄스, 라이프스타일';
+      const excludedSet = new Set(excludedCategories.map((c) => c.trim()));
+      const mergedCategories = Array.from(
+        new Set([
+          ...existingCategories.filter((c) => c && c !== '전체' && c !== '미분류'),
+          ...CORE_BROAD_CATEGORIES,
+        ])
+      ).filter((c) => !excludedSet.has(c));
+
+      const existingList = mergedCategories.join(', ');
+      const imagePart = await fetchThumbnailImagePart(thumbnail);
 
       const prompt = `당신은 영상 콘텐츠의 주제를 직관적이고 포괄적인 **대분류(Broad Category)**로 분류하는 스마트 AI 엔진입니다.
-사용자가 수동으로 카테고리를 설정하는 번거로움을 완전히 없애기 위해, 영상 제목이나 내용이 다소 짧거나 모호하더라도 영상의 맥락(채널/계정명, 숏폼 성격 등)을 최대한 유추하여 가장 가능성이 높은 카테고리로 적극적으로 자동 분류하세요. 절대로 '미분류'로 분류하지 말고 아래 카테고리 중 단 하나를 선택하세요.
+사용자가 수동으로 카테고리를 설정하는 번거로움을 없애기 위해, 제목·해시태그·URL·첨부된 썸네일 이미지(피사체 및 화면 자막)를 **종합적으로** 분석하여 가장 정확한 하나의 카테고리를 선택하세요. 절대로 '미분류'를 반환하지 마세요.
 
-[현재 앱의 카테고리 목록]:
+[중요 - 비유/은유 표현 판별 규칙]:
+- 제목의 비유적 표현이나 단편적 단어 하나에 속지 마세요.
+  (예: 강아지를 '녹아내리는 솜사탕'이라고 비유했더라도 #말티즈 해시태그와 썸네일 속 강아지 모습이 보이면 반드시 '반려동물'입니다.)
+- 첨부된 썸네일 이미지가 있다면 이미지 속 실제 피사체(사람, 동물, 음식, 게임 화면 등)와 영상 자막 텍스트를 최우선 단서로 활용하세요.
+
+[카테고리 목록]:
 ${existingList}
 
-[★ 핵심 대분류 분류 규칙]:
-1. **게임 (대분류)**: 롤, 배그, 발로란트, 오버워치, 마인크래프트, 피파, 로아, 메이플, 스타, 철권, 원신, 스팀, 콘솔/모바일 게임, e스포츠, 게임 방송 등 게임 관련 모든 영상.
-2. **음식 (대분류)**: 맛집 탐방, 먹방, 길거리음식, 요리 및 레시피, 카페, 베이커리 등 음식 관련 모든 영상.
-3. **운동 (대분류)**: 헬스, 홈트, 피트니스, 스트레칭뿐만 아니라 야구, 축구, 농구, 골프 등 모든 스포츠 경기 영상.
-4. **자기계발 (대분류)**: 공부, 독서, 커리어, 재테크, 주식, 동기부여, 자격증, 영어, 교육 아카데미 등.
-5. **패션/뷰티 (대분류)**: 메이크업, 옷 코디, 룩북, 헤어스타일, 스킨케어, 데일리룩 등.
-6. **음악/댄스 (대분류)**: 노래, 댄스, 안무 챌린지, 악기 연주, 플레이리스트, 아이돌 등.
-7. **예능/유머 (대분류)**: 재미있는 숏폼 밈, 웃긴 영상, 개그, 토크, 코미디 등 (주제가 모호한 릴스/쇼츠의 1순위 추천).
-8. **라이프스타일 (대분류)**: 일상 브이로그, 룸투어, 인테리어, 청소, 살림 등.
-9. **테크 (대분류)**: 스마트폰, 전자기기 리뷰, 맥북, 코딩, 인공지능, IT 신제품 등.
+[★ 핵심 대분류 분류 기준]:
+1. **반려동물**: 강아지(말티즈, 비숑, 푸들 등), 고양이, 애완동물 일상·케어·동물 영상
+2. **게임**: 롤, 배그, 발로란트, 오버워치, 마인크래프트, 피파, 로아, 메이플, 스타, 콘솔/모바일 게임, e스포츠 등
+3. **음식**: 맛집 탐방, 먹방, 길거리음식, 실제 요리 및 레시피, 카페, 베이커리 등 (단순 비유 표현 제외)
+4. **운동**: 헬스, 홈트, 피트니스, 스트레칭 및 야구, 축구, 농구, 골프 등 모든 스포츠 영상
+5. **자기계발**: 공부, 독서, 커리어, 재테크, 주식, 동기부여, 자격증, 영어, 강의 등
+6. **패션/뷰티**: 메이크업, 옷 코디, 룩북, 헤어스타일, 스킨케어, 데일리룩 등
+7. **음악/댄스**: 노래, 댄스, 안무 챌린지, 악기 연주, 플레이리스트, 아이돌 등
+8. **영화/드라마**: 영화, 드라마, 넷플릭스, 애니메이션 리뷰·명장면 등
+9. **여행**: 국내외 여행, 숙소, 항공, 관광 명소 등
+10. **테크**: 스마트폰, 전자기기 리뷰, 맥북, 코딩, 인공지능, IT 신제품 등
+11. **예능/유머**: 재미있는 숏폼 밈, 웃긴 영상, 개그, 토크, 코미디 등
+12. **라이프스타일**: 일상 브이로그, 룸투어, 인테리어, 청소, 살림 등
 
 영상 제목: "${title}"
 영상 URL: "${url}"
-썸네일 이미지: "${thumbnail}"
+${imagePart ? '첨부 이미지: 이 영상의 실제 썸네일 이미지가 함께 첨부되었습니다.' : `썸네일 URL: "${thumbnail}"`}
 
-반드시 추가 부연 설명 없이 카테고리 이름 한 단어만 정확히 출력하세요 (예: 예능/유머, 자기계발, 음식, 운동, 여행, 게임, 테크, 라이프스타일 등).`;
+추가 설명 없이 가장 정확한 카테고리 이름 한 단어만 정확히 출력하세요 (예: 반려동물, 음식, 운동, 여행, 게임, 테크, 자기계발, 패션/뷰티, 음악/댄스, 영화/드라마, 예능/유머, 라이프스타일).`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-      });
+      const contentsPayload = imagePart ? { parts: [imagePart, { text: prompt }] } : prompt;
+      const initialModel = await resolveInitialClassificationModel(ai);
+      const triedModels = new Set<string>();
+      const candidateQueue = [initialModel, PRIMARY_GEMINI_MODEL, FALLBACK_GEMINI_MODEL];
 
-      const text = response.text ? response.text.trim() : '';
-      const cleanCategory = text.replace(/^[#\*\s"']+|[#\*\s"']+$/g, '').replace(/카테고리:?/i, '').trim();
+      let responseText = '';
+      for (const candidate of candidateQueue) {
+        if (!candidate || triedModels.has(candidate)) continue;
+        triedModels.add(candidate);
+        try {
+          const response = await ai.models.generateContent({
+            model: candidate,
+            contents: contentsPayload,
+          });
+          responseText = response.text ? response.text.trim() : '';
+          cachedFlashModel = {
+            name: candidate,
+            expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
+          };
+          break;
+        } catch (err: any) {
+          if (isModelUnavailableError(err)) {
+            console.warn(`Gemini model "${candidate}" unavailable, trying next model...`);
+            cachedFlashModel = null;
+            const liveFallback = await discoverLatestFlashModel(ai, triedModels);
+            if (liveFallback && !triedModels.has(liveFallback)) {
+              candidateQueue.push(liveFallback);
+            }
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      const cleanCategory = responseText
+        .replace(/^[#\*\s"']+|[#\*\s"']+$/g, '')
+        .replace(/카테고리:?/i, '')
+        .trim();
 
       if (cleanCategory && !excludedCategories.includes(cleanCategory) && cleanCategory !== '미분류') {
         return cleanCategory;

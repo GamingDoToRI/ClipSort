@@ -27,10 +27,10 @@ export function classifyContentClientSide(
   const text = `${titleLower} ${urlPath.toLowerCase()}`;
   const excluded = new Set(excludedCategories.map((c) => c.trim().toLowerCase()));
 
-  // 1. 음식 (대분류: 맛집, 먹방, 부대찌개, 골목, 요리, 레시피, 카페, 베이커리 등 전반)
+  // 1. 음식 (대분류: 맛집, 먹방, 부대찌개, 요리, 레시피, 카페 등 — '국'/'탕' 단독 매칭으로 인한 '솜사탕'/'한국' 오분류 방지)
   if (
     !excluded.has('음식') &&
-    (/(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|밥|라면|디저트|브런치|반찬|국|탕|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|골목|식당|미식|안주|만들기)/i.test(
+    (/(음식|맛집|먹방|요리|레시피|쿡|찌개|파스타|베이킹|식단|라면|디저트|브런치|반찬|조리|간식|카페|베이커리|떡볶이|치킨|피자|바베큐|부대찌개|고기|식당|미식|안주|만들기|삼계탕|갈비탕|설렁탕|감자탕|매운탕|곰탕|마라탕|육개장|탕수육|샤브샤브|미역국|떡국|국밥|국수|칼국수|김밥|비빔밥|볶음밥|덮밥|초밥)/i.test(
       text
     ) ||
       /\b(cook|recipe|food|chef|baking|pasta|noodle|mukbang|dessert|kitchen|dish|restaurant|delicious|yummy|eating)\b/i.test(
@@ -122,7 +122,20 @@ export function classifyContentClientSide(
     return '음악/댄스';
   }
 
-  // 8. 예능/유머 (Entertainment / Comedy)
+  // 8. 반려동물 (Pets / Animals) - Check before 예능/유머
+  if (
+    !excluded.has('반려동물') &&
+    (/(반려동물|강아지|고양이|댕댕이|냥이|냥냥이|애견|애묘|반려견|반려묘|말티즈|비숑|푸들|포메|포메라니안|골든리트리버|리트리버|웰시코기|시바견|시츄|치와와|진돗개|닥스훈트|사모예드|허스키|보더콜리|슈나우저|꼬순내|강쥐|멍멍이|멍뭉이|집사|페르시안|러시안블루|스코티시폴드|코숏|먼치킨|랙돌|동물)/i.test(
+      text
+    ) ||
+      /\b(pet|pets|dog|dogs|cat|cats|puppy|puppies|kitten|kittens|animal|maltese|bichon|poodle|corgi)\b/i.test(
+        titleLower
+      ))
+  ) {
+    return '반려동물';
+  }
+
+  // 9. 예능/유머 (Entertainment / Comedy)
   if (
     !excluded.has('예능/유머') &&
     /(예능|유머|웃긴|개그|코미디|쇼츠|밈|웃음|꿀잼|몰카|토크|comedy|humor|funny|meme|entertainment)/i.test(
@@ -130,16 +143,6 @@ export function classifyContentClientSide(
     )
   ) {
     return '예능/유머';
-  }
-
-  // 9. 반려동물 (Pets / Animals)
-  if (
-    !excluded.has('반려동물') &&
-    /(반려동물|강아지|고양이|댕댕이|냥이|애견|애묘|포메라니안|골든리트리버|동물|pet|dog|cat|puppy|kitten|animal)/i.test(
-      text
-    )
-  ) {
-    return '반려동물';
   }
 
   // 10. 영화/드라마 (Movies / Series)
