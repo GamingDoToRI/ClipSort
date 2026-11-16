@@ -1,12 +1,5 @@
 import crypto from 'crypto';
-import { getFirebaseAdminApp } from './firebaseAdminHelper.js';
-import {
-  syncAndAutoUnifyKakaoAccount,
-  extractLinkedEmails,
-  resolveDisplayEmail,
-  type SupportedProvider,
-  type LinkedEmailsMap,
-} from './accountMergeService.js';
+import type { SupportedProvider, LinkedEmailsMap } from './accountMergeService.js';
 
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -302,6 +295,13 @@ export async function handleKakaoAuthCallback(req: any, res: any) {
         : undefined;
 
     // 3. Create or update Firebase Auth user & auto-unify verified email accounts under Kakao Master UID
+    const [
+      { getFirebaseAdminApp },
+      { syncAndAutoUnifyKakaoAccount, extractLinkedEmails, resolveDisplayEmail },
+    ] = await Promise.all([
+      import('./firebaseAdminHelper.js'),
+      import('./accountMergeService.js'),
+    ]);
     const { auth: adminAuth, firestore: adminDb, hasServiceAccount } = getFirebaseAdminApp();
     if (!hasServiceAccount || !adminAuth) {
       return sendPopupResultHtml(res, {

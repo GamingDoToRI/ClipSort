@@ -165,9 +165,15 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   // Pre-fetched Kakao Auth URL cache so popup opens synchronously on click when ready
   const [kakaoAuthUrlCache, setKakaoAuthUrlCache] = useState<string | null>(null);
   const [isKakaoLoading, setIsKakaoLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsGoogleLoading(false);
+      setIsKakaoLoading(false);
+      setIsSubmitting(false);
+      return;
+    }
     let active = true;
     fetch('/api/auth/kakao/url')
       .then((res) => (res.ok ? res.json() : null))
@@ -733,11 +739,30 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
   };
 
   const handleGoogleLogin = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+    if (isSubmitting || isGoogleLoading || isKakaoLoading) return;
+    setIsGoogleLoading(true);
     setLoginError(null);
+
+    let settled = false;
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
+    const onWindowFocus = () => {
+      if (settled || focusTimer) return;
+      // Release UI loading promptly (~0.9s) if user closed the Google popup before Firebase SDK finishes polling
+      focusTimer = setTimeout(() => {
+        if (!settled) {
+          setIsGoogleLoading(false);
+        }
+      }, 900);
+    };
+    const attachTimer = setTimeout(() => {
+      if (!settled) {
+        window.addEventListener('focus', onWindowFocus);
+      }
+    }, 400);
+
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      settled = true;
       const fbUser = result.user;
       const unifiedProfile = await resolveUnifiedLoginProfile(fbUser, {
         isLoggedIn: true,
@@ -751,6 +776,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       onLoginSuccess(unifiedProfile);
       onClose();
     } catch (err: any) {
+      settled = true;
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         return;
       }
@@ -763,12 +789,16 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       }
       setLoginError(msg);
     } finally {
-      setIsSubmitting(false);
+      settled = true;
+      clearTimeout(attachTimer);
+      if (focusTimer) clearTimeout(focusTimer);
+      window.removeEventListener('focus', onWindowFocus);
+      setIsGoogleLoading(false);
     }
   };
 
   const handleKakaoLogin = async () => {
-    if (isSubmitting || isKakaoLoading) return;
+    if (isSubmitting || isKakaoLoading || isGoogleLoading) return;
     setIsKakaoLoading(true);
     setLoginError(null);
 
@@ -780,7 +810,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success || !data?.url) {
           setLoginError(
-            data?.error || '카카오 로그인 설정이 아직 완료되지 않았습니다. Google 로그인 또는 이메일 로그인을 이용해 주세요.'
+            data?.error || '카카오 로그인 서버와 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.'
           );
           setIsKakaoLoading(false);
           return;
@@ -809,13 +839,13 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
         return;
       }
 
-      // Reset loading state if user manually closes popup before completing login
+      // Reset loading state promptly when user manually closes popup before completing login
       const checkClosed = setInterval(() => {
         if (popup.closed) {
           clearInterval(checkClosed);
           setIsKakaoLoading(false);
         }
-      }, 600);
+      }, 250);
     } catch (err: any) {
       console.error('Kakao OAuth start error:', err);
       setLoginError(err?.message || '카카오 로그인 창을 여는 중 오류가 발생했습니다.');
@@ -1056,7 +1086,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   <button
                     type="button"
                     onClick={handleKakaoLogin}
-                    disabled={isSubmitting || isKakaoLoading}
+                    disabled={isSubmitting || isKakaoLoading || isGoogleLoading}
                     className="w-full py-3.5 px-4 rounded-xl bg-[#FEE500] hover:bg-[#F5DC00] text-[#191919] font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer shadow-xs disabled:opacity-60"
                   >
                     {isKakaoLoading ? (
@@ -1078,16 +1108,25 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
-                    disabled={isSubmitting || isKakaoLoading}
+                    disabled={isSubmitting || isKakaoLoading || isGoogleLoading}
                     className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-[#f8f9fa] text-[#1f1f1f] font-bold text-xs border border-[#dadce0] flex items-center justify-center gap-2.5 transition-all active:scale-[0.99] cursor-pointer shadow-xs disabled:opacity-60"
                   >
-                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"/>
-                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.16 0 9.97 0 12s.45 3.84 1.24 5.42l4.04-3.15z"/>
-                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-                    </svg>
-                    <span>Google 계정으로 계속하기</span>
+                    {isGoogleLoading ? (
+                      <>
+                        <RotateCw className="w-4 h-4 animate-spin text-[#4285F4]" />
+                        <span>Google 로그인 연결 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"/>
+                          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.16 0 9.97 0 12s.45 3.84 1.24 5.42l4.04-3.15z"/>
+                          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                        </svg>
+                        <span>Google 계정으로 계속하기</span>
+                      </>
+                    )}
                   </button>
 
                   {/* New Account Sign Up Callout */}
