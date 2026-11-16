@@ -13,8 +13,10 @@ export function initAnalytics(): void {
   initialized = true;
 
   window.dataLayer = window.dataLayer || [];
-  window.gtag = function gtag(...args: unknown[]) {
-    window.dataLayer?.push(args);
+  window.gtag = function gtag() {
+    // Google gtag.js strictly requires the native Arguments object rather than an Array (...args)
+    // eslint-disable-next-line prefer-rest-params
+    window.dataLayer?.push(arguments);
   };
 
   window.gtag('js', new Date());
