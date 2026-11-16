@@ -32,7 +32,7 @@ function getStateSecret(): string {
 }
 
 function getAppBaseUrl(): string {
-  const envAppUrl = cleanEnvValue(process.env.APP_URL);
+  const envAppUrl = cleanEnvValue(process.env.APP_URL) || cleanEnvValue(process.env.SITE_URL);
   if (envAppUrl) {
     return envAppUrl.replace(/\/+$/, '');
   }
