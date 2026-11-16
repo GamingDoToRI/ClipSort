@@ -188,19 +188,13 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
     };
   }, [isOpen]);
 
-  // Listen for OAuth popup completion messages (Kakao)
+  // Listen for OAuth popup completion messages (Kakao) via postMessage, BroadcastChannel, and localStorage
+  const handledKakaoTokenRef = React.useRef<string | null>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
-    const handleOAuthMessage = async (event: MessageEvent) => {
-      const origin = event.origin || '';
-      const isTrustedOrigin =
-        origin === window.location.origin ||
-        origin.endsWith('.run.app') ||
-        origin.includes('localhost');
-      if (!isTrustedOrigin) return;
-
-      const payload = event.data;
+    const processKakaoPayload = async (payload: any) => {
       if (!payload || typeof payload !== 'object') return;
 
       if (payload.type === 'KAKAO_OAUTH_ERROR') {
@@ -210,9 +204,19 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       }
 
       if (payload.type === 'KAKAO_OAUTH_SUCCESS' && payload.customToken) {
+        if (handledKakaoTokenRef.current === payload.customToken) return;
+        handledKakaoTokenRef.current = payload.customToken;
+
         try {
           setIsKakaoLoading(true);
           setLoginError(null);
+          try {
+            localStorage.removeItem('__clipsort_kakao_oauth_result');
+            sessionStorage.removeItem('__clipsort_kakao_pending_auth');
+          } catch {
+            // ignore storage errors
+          }
+
           const cred = await signInWithCustomToken(auth, payload.customToken);
           const fbUser = cred.user;
           const profile = payload.profile || {};
@@ -234,6 +238,7 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
           onClose();
         } catch (err: any) {
           console.error('Kakao Firebase custom token sign-in error:', err);
+          handledKakaoTokenRef.current = null;
           setLoginError(
             err?.message || '카카오 계정 인증은 완료되었으나 세션 연결에 실패했습니다.'
           );
@@ -243,8 +248,51 @@ export const AuthFlowModal: React.FC<AuthFlowModalProps> = ({
       }
     };
 
+    const handleOAuthMessage = (event: MessageEvent) => {
+      const origin = event.origin || '';
+      const isTrustedOrigin =
+        origin === window.location.origin ||
+        origin.endsWith('.run.app') ||
+        origin.includes('localhost');
+      if (!isTrustedOrigin) return;
+      void processKakaoPayload(event.data);
+    };
+
+    const handleStorageEvent = (event: StorageEvent) => {
+      if (event.key !== '__clipsort_kakao_oauth_result' || !event.newValue) return;
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (parsed?.payload && (!parsed.ts || Date.now() - parsed.ts < 2 * 60 * 1000)) {
+          void processKakaoPayload(parsed.payload);
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        channel = new BroadcastChannel('clipsort_kakao_oauth');
+        channel.onmessage = (event) => {
+          void processKakaoPayload(event.data);
+        };
+      }
+    } catch {
+      channel = null;
+    }
+
     window.addEventListener('message', handleOAuthMessage);
-    return () => window.removeEventListener('message', handleOAuthMessage);
+    window.addEventListener('storage', handleStorageEvent);
+    return () => {
+      window.removeEventListener('message', handleOAuthMessage);
+      window.removeEventListener('storage', handleStorageEvent);
+      try {
+        channel?.close();
+      } catch {
+        // ignore
+      }
+    };
   }, [isOpen, onLoginSuccess, onClose]);
 
   if (!isOpen) return null;

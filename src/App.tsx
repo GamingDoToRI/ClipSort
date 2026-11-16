@@ -300,6 +300,42 @@ export default function App() {
     }
   }, []);
 
+  // Complete Kakao sign-in if callback fell back to a standalone redirect
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('__clipsort_kakao_pending_auth');
+      if (!raw) return;
+      sessionStorage.removeItem('__clipsort_kakao_pending_auth');
+      const payload = JSON.parse(raw);
+      if (payload?.type === 'KAKAO_OAUTH_SUCCESS' && payload?.customToken) {
+        signInWithCustomToken(auth, payload.customToken)
+          .then((cred) => {
+            const fbUser = cred.user;
+            const profile = payload.profile || {};
+            setUser({
+              isLoggedIn: true,
+              uid: fbUser.uid,
+              nickname:
+                profile.nickname ||
+                fbUser.displayName ||
+                profile.email?.split('@')[0] ||
+                '카카오사용자',
+              email: profile.email || fbUser.email || '',
+              avatarUrl: profile.avatarUrl || fbUser.photoURL || undefined,
+              provider: 'kakao',
+              linkedProviders: profile.linkedProviders || ['kakao'],
+              linkedEmails: profile.linkedEmails,
+            });
+          })
+          .catch((err) => {
+            console.error('Pending Kakao sign-in error:', err);
+          });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastCategoryHint, setToastCategoryHint] = useState<string | undefined>(undefined);
@@ -710,9 +746,36 @@ export default function App() {
 
       const oauthResult = await new Promise<{ customToken: string }>((resolve, reject) => {
         let settled = false;
+        let channel: BroadcastChannel | null = null;
+
         const cleanup = () => {
           window.removeEventListener('message', onMessage);
+          window.removeEventListener('storage', onStorage);
           clearInterval(closedTimer);
+          try {
+            channel?.close();
+          } catch {
+            // ignore
+          }
+        };
+
+        const handlePayload = (payload: any) => {
+          if (settled || !payload || typeof payload !== 'object') return;
+          if (payload.type === 'KAKAO_OAUTH_ERROR') {
+            settled = true;
+            cleanup();
+            reject(new Error(payload.error || '카카오 인증에 실패했습니다.'));
+          } else if (payload.type === 'KAKAO_OAUTH_SUCCESS' && payload.customToken) {
+            settled = true;
+            cleanup();
+            try {
+              localStorage.removeItem('__clipsort_kakao_oauth_result');
+              sessionStorage.removeItem('__clipsort_kakao_pending_auth');
+            } catch {
+              // ignore
+            }
+            resolve({ customToken: payload.customToken });
+          }
         };
 
         const onMessage = (event: MessageEvent) => {
@@ -722,20 +785,29 @@ export default function App() {
             origin.endsWith('.run.app') ||
             origin.includes('localhost');
           if (!isTrusted) return;
+          handlePayload(event.data);
+        };
 
-          const payload = event.data;
-          if (!payload || typeof payload !== 'object') return;
-
-          if (payload.type === 'KAKAO_OAUTH_ERROR') {
-            settled = true;
-            cleanup();
-            reject(new Error(payload.error || '카카오 인증에 실패했습니다.'));
-          } else if (payload.type === 'KAKAO_OAUTH_SUCCESS' && payload.customToken) {
-            settled = true;
-            cleanup();
-            resolve({ customToken: payload.customToken });
+        const onStorage = (event: StorageEvent) => {
+          if (event.key !== '__clipsort_kakao_oauth_result' || !event.newValue) return;
+          try {
+            const parsed = JSON.parse(event.newValue);
+            if (parsed?.payload && (!parsed.ts || Date.now() - parsed.ts < 2 * 60 * 1000)) {
+              handlePayload(parsed.payload);
+            }
+          } catch {
+            // ignore
           }
         };
+
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            channel = new BroadcastChannel('clipsort_kakao_oauth');
+            channel.onmessage = (event) => handlePayload(event.data);
+          }
+        } catch {
+          channel = null;
+        }
 
         const closedTimer = setInterval(() => {
           if (popup.closed && !settled) {
@@ -746,6 +818,7 @@ export default function App() {
         }, 500);
 
         window.addEventListener('message', onMessage);
+        window.addEventListener('storage', onStorage);
       });
 
       const kakaoCred = await signInWithCustomToken(secondaryAuth, oauthResult.customToken);

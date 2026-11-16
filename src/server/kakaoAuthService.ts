@@ -130,11 +130,46 @@ function sendPopupResultHtml(
     (function () {
       var data = ${serialized};
       document.getElementById('msg').textContent = ${JSON.stringify(statusDesc)};
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(data, '*');
-        setTimeout(function () { window.close(); }, 150);
-      } else if (data.type === 'KAKAO_OAUTH_SUCCESS') {
-        window.location.href = '/';
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          var ch = new BroadcastChannel('clipsort_kakao_oauth');
+          ch.postMessage(data);
+          ch.close();
+        }
+      } catch (e) {}
+
+      try {
+        localStorage.setItem(
+          '__clipsort_kakao_oauth_result',
+          JSON.stringify({ payload: data, ts: Date.now() })
+        );
+      } catch (e) {}
+
+      var hasOpener = false;
+      try {
+        if (window.opener && !window.opener.closed) {
+          hasOpener = true;
+          window.opener.postMessage(data, '*');
+        }
+      } catch (e) {}
+
+      if (data.type === 'KAKAO_OAUTH_SUCCESS') {
+        try {
+          sessionStorage.setItem('__clipsort_kakao_pending_auth', JSON.stringify(data));
+        } catch (e) {}
+      }
+
+      setTimeout(function () {
+        try { window.close(); } catch (e) {}
+      }, 150);
+
+      if (!hasOpener && data.type === 'KAKAO_OAUTH_SUCCESS') {
+        setTimeout(function () {
+          if (!window.closed) {
+            window.location.replace('/');
+          }
+        }, 900);
       }
     })();
   </script>
