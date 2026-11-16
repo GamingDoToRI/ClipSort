@@ -24,7 +24,7 @@ app.get('/sw.js', (_req, res) => {
 const getPublicSiteUrl = () =>
   (
     process.env.SITE_URL?.trim() ||
-    'https://ais-pre-65azsuha2xifn2bgmsfkhq-887540500420.asia-east1.run.app'
+    'https://clipsort.vercel.app'
   ).replace(/\/+$/, '');
 
 app.get('/robots.txt', (_req, res) => {

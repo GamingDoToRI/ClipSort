@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ais-pre-65azsuha2xifn2bgmsfkhq-887540500420.asia-east1.run.app/sitemap.xml
+Sitemap: https://clipsort.vercel.app/sitemap.xml
