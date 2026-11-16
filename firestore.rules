@@ -1,37 +1,27 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Connection test document
+    // Connection test document (read-only health check)
     match /test/{docId} {
-      allow read, write: if true;
+      allow read: if docId == 'connection';
+      allow write: if false;
     }
 
-    // Videos collection partitioned by Firebase Auth UID
+    // Videos collection strictly partitioned by authenticated Firebase Auth UID
     match /videos/{videoId} {
-      // Authenticated users can read their own bookmarks or legacy bookmarks
-      allow read: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        !('userId' in resource.data) ||
-        resource.data.userId == null
-      );
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
 
-      // Authenticated users can create bookmarks tagged with their own UID
-      allow create: if request.auth != null && (
-        request.resource.data.userId == request.auth.uid
-      );
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.id is string &&
+        request.resource.data.url is string &&
+        request.resource.data.title is string;
 
-      // Authenticated users can update or delete their own bookmarks or claim legacy bookmarks
-      allow update: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        !('userId' in resource.data) ||
-        resource.data.userId == null
-      );
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId;
 
-      allow delete: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        !('userId' in resource.data) ||
-        resource.data.userId == null
-      );
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // System email verification tokens collection (Strictly server-side access only via Admin SDK)

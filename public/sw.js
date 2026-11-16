@@ -45,6 +45,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Never intercept or cache API / OAuth endpoints
+  try {
+    const reqUrl = new URL(event.request.url);
+    if (reqUrl.pathname.startsWith('/api/')) {
+      return;
+    }
+  } catch {
+    return;
+  }
+
   // Network-first with cache fallback strategy
   event.respondWith(
     fetch(event.request)
